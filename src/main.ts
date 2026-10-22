@@ -312,10 +312,15 @@ const lock = $("#lock"), tag = $("#lock-tag"), line = document.getElementById("l
 let preso: Evento | null = null;
 function decodifica(el: HTMLElement, testo: string) {
   if (calmo()) { el.textContent = testo; return; }
-  const segni = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"; let i = 0;
-  const id = setInterval(() => { i++; el.textContent = testo.split("").map((ch, k) => (k < i || ch === " " ? ch : segni[(Math.random() * segni.length) | 0])).join(""); if (i >= testo.length) clearInterval(id); }, 26);
+  const segni = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", t0 = performance.now(), durata = 240;
+  const passo = (t: number) => {
+    const fatti = Math.floor(((t - t0) / durata) * testo.length);
+    el.textContent = testo.split("").map((ch, k) => (k < fatti || ch === " " ? ch : segni[(Math.random() * segni.length) | 0])).join("");
+    if (fatti < testo.length) requestAnimationFrame(passo); else el.textContent = testo;
+  };
+  requestAnimationFrame(passo);
 }
-function aggancia(e: Evento) { preso = e; lock.hidden = false; lock.classList.remove("on"); void lock.offsetWidth; requestAnimationFrame(() => lock.classList.add("on")); tag.textContent = `${TIPI[e.tipo].label} · ${e.comune}`; segui(); }
+function aggancia(e: Evento) { preso = e; lock.hidden = false; lock.classList.remove("on"); void lock.offsetWidth; requestAnimationFrame(() => lock.classList.add("on")); decodifica(tag, `${TIPI[e.tipo].label} · ${e.comune}`.toUpperCase()); segui(); }
 function sgancia() { preso = null; lock.hidden = true; line.setAttribute("points", ""); dot.setAttribute("r", "0"); }
 function segui() {
   if (!preso) return;
