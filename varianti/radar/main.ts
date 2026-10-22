@@ -5,6 +5,19 @@ import { EVENTI, ORA, type Evento, type Tipo, type FonteTipo } from "../../src/d
 
 declare const maplibregl: any;
 
+// ---------- tempi del movimento (gli stessi valori sono in style.css come --t-*) ----------
+const MOTO = {
+  press: 120,      // risposta a tocco e passaggio
+  lock: 200,       // angoli dell'aggancio e impulso
+  decode: 650,     // testo che si decodifica, da sinistra a destra
+  decodeChar: 70,  // finestra di disordine per carattere (3-4 fotogrammi)
+  stato: 800,      // righe di stato del caricamento
+  sheet: 280,      // pannelli e scheda
+  fly: 800,        // volo della camera
+  reveal: 560,     // comparsa degli echi a dati pronti
+  passo: 200,      // un fotogramma dell'animazione nel tempo
+};
+
 // ---------- vocabolario ----------
 const TIPI: Record<Tipo, { label: string; plur: string; forma: "quadrato" | "rombo" | "triangolo" | "cerchio"; gravita: number }> = {
   blocco: { label: "Blocco", plur: "Blocchi", forma: "quadrato", gravita: 1 },
@@ -18,7 +31,7 @@ const FONTE: Record<FonteTipo, string> = { ufficiale: "Ente ufficiale", agenzia:
 const PESO: Record<FonteTipo, number> = { ufficiale: 1, agenzia: 0.6, testata: 0.5, parte: 0.3 };
 const SOGLIA = 0.8, SCALA = 1.2;
 const ITALIA: [[number, number], [number, number]] = [[6.6, 36.4], [18.6, 47.1]];
-const CENTRO_RADAR: [number, number] = [12.9, 41.7];
+const SUD = ["Calabria", "Sicilia", "Puglia", "Campania", "Basilicata"];
 const H = 36e5;
 
 const $ = <T extends HTMLElement = HTMLElement>(s: string) => document.querySelector(s) as T;
@@ -29,6 +42,7 @@ const settimana = (d: number) => new Date(d).toLocaleDateString("it-IT", { weekd
 const titolo = (e: Evento) => `${TIPI[e.tipo].label} a ${e.comune}`;
 const desktop = () => matchMedia("(min-width: 1000px)").matches;
 const calmo = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 function fa(d: string) {
   const m = Math.round((+ORA - +new Date(d)) / 60000);
   if (m < 60) return `${m} min fa`;
@@ -50,7 +64,7 @@ function pacchetti(e: Evento) {
 const totale = (e: Evento) => pacchetti(e).reduce((a, x) => a + x.w, 0);
 function conferma(e: Evento) { return e.contraddittorio ? 0.35 : Math.max(0.3, Math.min(1, totale(e))); }
 function intensita(e: Evento) { return +(TIPI[e.tipo].gravita * conferma(e)).toFixed(2); }
-function banda(v: number) { return v >= 0.7 ? { k: 3, label: "forte" } : v >= 0.45 ? { k: 2, label: "moderata" } : { k: 1, label: "debole" }; }
+function banda(v: number) { return v <= 0 ? { k: 0, label: "assente" } : v >= 0.7 ? { k: 3, label: "forte" } : v >= 0.45 ? { k: 2, label: "moderata" } : { k: 1, label: "debole" }; }
 function credibilita(e: Evento) {
   if (e.contraddittorio) return { label: "Fonti discordanti", cls: "warn" };
   if (!e.fonti.length) return { label: `${e.segnalatori} segnalazioni, nessuna fonte`, cls: "user" };
@@ -65,43 +79,70 @@ function variante(e: Evento) {
   return e.stato === "annunciato" ? "vuoto" : "pieno";
 }
 
-// ---------- tempo: 24 fotogrammi orari nel passato, 64 da 3 ore nel futuro ----------
-const FOTO: number[] = [];
-for (let i = 0; i <= 24; i++) FOTO.push(+ORA - (24 - i) * H);
-for (let i = 1; i <= 64; i++) FOTO.push(+ORA + i * 3 * H);
-const I_ORA = 24;
+// ---------- tempo: 24 fotogrammi orari osservati, poi 32 da 6 ore di previsione ----------
+// Ogni fotogramma è un intervallo: l'ora che finisce a t (osservato) o le 6 ore che iniziano a t (previsione).
+interface Foto { a: number; b: number; prev: boolean }
+const FOTO: Foto[] = [];
+for (let i = 0; i <= 24; i++) { const b = +ORA - (24 - i) * H; FOTO.push({ a: b - H, b, prev: false }); }
+for (let k = 1; k <= 32; k++) FOTO.push({ a: +ORA + (k - 1) * 6 * H, b: +ORA + k * 6 * H, prev: true });
+const I_ORA = 24, N = FOTO.length;
 function finestra(e: Evento) {
   const a = +new Date(e.inizio);
   if (e.fine) return { a, b: +new Date(e.fine), aperta: false };
   if (e.stato === "in_corso") return { a, b: +ORA + 24 * H, aperta: true };
   return { a, b: a + 3 * H, aperta: false };
 }
-function peso(e: Evento, t: number) {
-  const f = finestra(e);
-  if (t < f.a || t > f.b) return 0;
-  const decad = f.aperta && t > +ORA ? Math.max(0, 1 - (t - +ORA) / (24 * H)) : 1;
-  return intensita(e) * decad;
+function peso(e: Evento, f: Foto) {
+  const w = finestra(e);
+  if (w.b <= f.a || w.a > f.b) return 0;
+  const mezzo = (f.a + f.b) / 2, decad = w.aperta && mezzo > +ORA ? Math.max(0, 1 - (mezzo - +ORA) / (24 * H)) : 1;
+  return +(intensita(e) * decad).toFixed(3);
 }
+const etichettaFoto = (f: Foto) => f.prev ? `${settimana(f.a)} ${giorno(f.a)} ${ora(f.a)}–${ora(f.b)}` : `${settimana(f.b)} ${dataOra(f.b)}`;
 
 // ---------- stato ----------
 const st = { tipi: new Set<Tipo>(ORDINE_TIPI), i: I_ORA, sel: null as string | null, play: false, vista: "elenco" as "elenco" | "metodo" | "segnala" };
 const filtrati = () => EVENTI.filter((e) => st.tipi.has(e.tipo));
-const tempo = () => FOTO[st.i];
-const futuro = () => st.i > I_ORA;
-const attiviA = (t: number) => filtrati().filter((e) => peso(e, t) > 0).sort((a, b) => peso(b, t) - peso(a, t));
+const foto = () => FOTO[st.i];
+const futuro = () => FOTO[st.i].prev;
+const attivi = (f: Foto) => filtrati().filter((e) => peso(e, f) > 0).sort((a, b) => peso(b, f) - peso(a, f));
 
-// ---------- testo che si decodifica ----------
-const SEGNI = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/·";
-function decodifica(el: Element, testo: string, durata = 240) {
+// ---------- testo che si decodifica: da sinistra a destra, breve disordine per carattere ----------
+const SEGNI = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/<>#·";
+const inCorso = new WeakMap<Element, number>();
+function decodifica(el: Element, testo: string, durata = MOTO.decode) {
+  inCorso.set(el, (inCorso.get(el) || 0) + 1);
+  const io = inCorso.get(el);
   if (calmo()) { el.textContent = testo; return; }
-  const t0 = performance.now();
-  const passo = (t: number) => {
-    const fatti = Math.floor(((t - t0) / durata) * testo.length);
-    el.textContent = testo.split("").map((ch, k) => (k < fatti || ch === " " ? ch : SEGNI[(Math.random() * SEGNI.length) | 0])).join("");
-    if (fatti < testo.length) requestAnimationFrame(passo); else el.textContent = testo;
+  const n = testo.length, fin = MOTO.decodeChar, passo = Math.max(8, (durata - fin) / Math.max(1, n)), t0 = performance.now();
+  let fot = 0;
+  const giro = (t: number) => {
+    if (inCorso.get(el) !== io) return;
+    const dt = t - t0; fot++;
+    let fatto = "", mischia = "", k = 0;
+    for (; k < n; k++) {
+      const da = k * passo;
+      if (dt >= da + fin || testo[k] === " ") fatto += testo[k];
+      else if (dt >= da) { const c = SEGNI[(k * 7 + (fot >> 1) * 13 + ((fot >> 1) * k) % 11) % SEGNI.length]; mischia += testo[k] === testo[k].toLowerCase() ? c.toLowerCase() : c; }
+      else break;
+    }
+    // la parte non ancora rivelata resta nel flusso, invisibile: la riga non cambia larghezza
+    el.innerHTML = `${esc(fatto)}<span class="scr">${esc(mischia)}</span><span class="rest">${esc(testo.slice(fatto.length + mischia.length))}</span>`;
+    if (dt < durata + fin) requestAnimationFrame(giro); else el.textContent = testo;
   };
-  requestAnimationFrame(passo);
+  requestAnimationFrame(giro);
 }
+
+// ---------- radar come indicatore di caricamento ----------
+function radar(size: number, cls = "") {
+  return `<span class="spin ${cls}" style="--s:${size}px" aria-hidden="true"><svg viewBox="-26 -26 52 52">
+    <circle class="ring" r="24"/><circle class="ring" r="16"/><circle class="ring" r="8"/>
+    <g class="beam"><path class="wedge" d="M0 0L0-24A24 24 0 0 1 16.97-16.97Z"/><line x1="0" y1="0" x2="0" y2="-24"/></g>
+    <circle class="blip b1" cx="11" cy="-14" r="2"/><circle class="blip b2" cx="-15" cy="6" r="1.6"/><circle class="blip b3" cx="5" cy="19" r="1.6"/>
+  </svg></span>`;
+}
+let occupati = 0;
+function occupato(on: boolean) { occupati = Math.max(0, occupati + (on ? 1 : -1)); document.body.classList.toggle("busy", occupati > 0); }
 
 // ---------- simboli: forma per tipo, pieno/vuoto per stato ----------
 function forma(f: string, s = 7) {
@@ -109,11 +150,11 @@ function forma(f: string, s = 7) {
     : f === "triangolo" ? `<polygon points="0,${-s - 1} ${s + .8},${s - .4} ${-s - .8},${s - .4}"/>` : `<circle r="${s}"/>`;
 }
 function simbolo(tipo: Tipo, v: string, size = 16) {
-  const col = v === "concluso" ? "var(--concluso)" : "var(--ink)";
-  const fill = v === "pieno" || v === "concluso" ? col : v === "discorde" ? "url(#mezzo)" : "none";
-  return `<svg viewBox="-10 -10 20 20" width="${size}" height="${size}" aria-hidden="true"><defs><clipPath id="mezzo-c"><rect x="-10" y="-10" width="10" height="20"/></clipPath></defs>
-    ${v === "discorde" ? `<g clip-path="url(#mezzo-c)" fill="${col}">${forma(TIPI[tipo].forma)}</g>` : ""}
-    <g fill="${v === "discorde" ? "none" : fill}" stroke="${col}" stroke-width="2" ${v === "utenti" ? 'stroke-dasharray="2.6 2"' : ""}>${forma(TIPI[tipo].forma)}</g></svg>`;
+  const col = v === "concluso" ? "var(--concluso)" : "currentColor";
+  const fill = v === "pieno" || v === "concluso" ? col : "none";
+  return `<svg class="sym" viewBox="-10 -10 20 20" width="${size}" height="${size}" aria-hidden="true">
+    ${v === "discorde" ? `<defs><clipPath id="mezzo"><rect x="-10" y="-10" width="10" height="20"/></clipPath></defs><g clip-path="url(#mezzo)" fill="${col}">${forma(TIPI[tipo].forma)}</g>` : ""}
+    <g fill="${fill}" stroke="${col}" stroke-width="2" ${v === "utenti" ? 'stroke-dasharray="2.6 2"' : ""}>${forma(TIPI[tipo].forma)}</g></svg>`;
 }
 function tracciato(ctx: CanvasRenderingContext2D, f: string, c: number, r: number) {
   ctx.beginPath();
@@ -125,7 +166,6 @@ function tracciato(ctx: CanvasRenderingContext2D, f: string, c: number, r: numbe
 function icona(tipo: Tipo, v: string, px = 56) {
   const cv = document.createElement("canvas"); cv.width = cv.height = px;
   const ctx = cv.getContext("2d")!, c = px / 2, r = px * 0.25, ink = v === "concluso" ? "#8a9799" : "#f1fbf8";
-  // alone scuro per leggere la forma sopra l'eco
   tracciato(ctx, TIPI[tipo].forma, c, r); ctx.lineWidth = px * 0.16; ctx.strokeStyle = "rgba(4,8,10,.75)"; ctx.lineJoin = "round"; ctx.stroke();
   tracciato(ctx, TIPI[tipo].forma, c, r); ctx.fillStyle = "rgba(4,8,10,.7)"; ctx.fill();
   if (v === "pieno" || v === "concluso") { ctx.fillStyle = ink; ctx.fill(); }
@@ -141,6 +181,19 @@ function cerchio([lng, lat]: [number, number], km: number) {
   return p;
 }
 
+// ---------- caricamento iniziale ----------
+const loader = $("#loader"), loaderTxt = $("#loader-txt");
+loader.querySelector(".loader-spin")!.innerHTML = radar(64);
+$("#hud-mark").innerHTML = radar(20, "brand");
+(() => {
+  const fonti = EVENTI.reduce((a, e) => a + e.fonti.length, 0);
+  const righe = calmo() ? ["Caricamento…"] : [`ACQUISIZIONE ${fonti} FONTI · ${EVENTI.length} EVENTI`, "IMMAGINI SATELLITARI", `SOGLIA DI PUBBLICAZIONE ${SOGLIA.toFixed(2)}`];
+  loaderTxt.innerHTML = righe.map(() => `<span></span>`).join("");
+  const spans = loaderTxt.querySelectorAll("span");
+  righe.forEach((r, k) => setTimeout(() => decodifica(spans[k], r, MOTO.stato), k * 260));
+})();
+occupato(true);
+
 // ---------- mappa: globo satellitare notturno ----------
 const SATELLITE = {
   eox: { tiles: ["https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg"], maxzoom: 15,
@@ -148,13 +201,27 @@ const SATELLITE = {
   esri: { tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"], maxzoom: 18,
     attribution: "Immagini: Esri, Maxar, Earthstar Geographics" },
 };
-const map = new maplibregl.Map({
+const padMappa = () => desktop() ? { top: 80, bottom: 30, left: 30, right: 30 } : { top: 130, bottom: 250, left: 14, right: 14 };
+function erroreMappa(msg: string) {
+  const box = $("#maperr");
+  box.hidden = false;
+  box.innerHTML = `<p><b>La mappa non si è caricata.</b> ${msg} L'elenco degli eventi resta utilizzabile.</p><button class="btn" id="riprova">Riprova</button>`;
+  box.querySelector("#riprova")!.addEventListener("click", () => location.reload());
+  loader.classList.add("off"); occupati = 1; occupato(false);
+}
+// se la libreria della mappa non arriva, l'app resta usabile come elenco
+const senzaMappa = typeof maplibregl === "undefined";
+const noop: any = new Proxy(function () {}, { get: (_t, k) => (k === "project" ? () => ({ x: -999, y: -999 }) : noop), apply: () => noop });
+const map: any = senzaMappa ? noop : new maplibregl.Map({
   container: "map", style: { version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#04070a" } }] },
-  center: [12.6, 41.8], zoom: calmo() ? 5 : 2.2, minZoom: 1.6, maxZoom: 17.5, maxPitch: 60,
+  bounds: ITALIA, fitBoundsOptions: { padding: padMappa() }, minZoom: 1.6, maxZoom: 17.5, maxPitch: 60,
   attributionControl: { compact: true }, dragRotate: false,
 });
-map.touchZoomRotate.disableRotation();
-map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+if (senzaMappa) setTimeout(() => erroreMappa("Controlla la connessione."), 0);
+else {
+  map.touchZoomRotate.disableRotation();
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+}
 
 function satellite(style: any) {
   const strade = ["match", ["get", "class"], ["motorway"], "rgba(220,240,236,.38)", ["trunk", "primary"], "rgba(220,240,236,.22)", "rgba(220,240,236,.1)"];
@@ -180,207 +247,220 @@ function satellite(style: any) {
   return style;
 }
 let erroriSat = 0;
-map.on("error", (e: any) => {
-  if (e?.sourceId === "satellite" && ++erroriSat === 4) map.getSource("satellite")?.setTiles?.(SATELLITE.esri.tiles);
-  else console.warn("mappa:", e?.error?.message);
-});
-const padMappa = () => desktop() ? { top: 70, bottom: 30, left: 30, right: 30 } : { top: 70, bottom: 250, left: 12, right: 12 };
-(async () => {
-  map.once("style.load", () => setTimeout(() => {
-    if (calmo()) { map.fitBounds(ITALIA, { padding: padMappa(), duration: 0 }); return; }
-    map.fitBounds(ITALIA, { padding: padMappa(), duration: 1500, essential: true });
-    map.once("moveend", scansione);
-  }, 150));
-  try {
-    const r = await fetch("https://tiles.openfreemap.org/styles/liberty");
-    if (!r.ok) throw new Error(String(r.status));
-    map.setStyle(satellite(await r.json()));
-  } catch {
-    map.setStyle(satellite({ version: 8, sources: {}, layers: [] }));
-  }
-})();
+if (!senzaMappa) {
+  map.on("error", (e: any) => {
+    if (e?.sourceId === "satellite" && ++erroriSat === 4) map.getSource("satellite")?.setTiles?.(SATELLITE.esri.tiles);
+    else console.warn("mappa:", e?.error?.message);
+  });
+  (async () => {
+    try {
+      const r = await fetch("https://tiles.openfreemap.org/styles/liberty");
+      if (!r.ok) throw new Error(String(r.status));
+      map.setStyle(satellite(await r.json()));
+    } catch {
+      map.setStyle(satellite({ version: 8, sources: {}, layers: [] }));
+    }
+  })();
+}
+const regioniPronte = fetch("../../regioni.json").then((r) => r.json()).catch(() => null);
 
-// rivelazione degli echi durante la scansione (1 = visibile)
-const rivelato: Record<string, number> = {};
-let scansionato = calmo();
-
-const RAMPA_OSS = ["step", ["heatmap-density"], "rgba(0,0,0,0)", 0.05, "rgba(18,96,104,0.38)", 0.2, "rgba(24,148,146,0.56)", 0.42, "rgba(72,212,186,0.74)", 0.66, "rgba(170,247,224,0.88)", 0.88, "rgba(240,255,251,0.96)"];
-const RAMPA_PREV = ["step", ["heatmap-density"], "rgba(0,0,0,0)", 0.05, "rgba(36,62,112,0.38)", 0.2, "rgba(58,104,176,0.54)", 0.42, "rgba(110,160,228,0.7)", 0.66, "rgba(182,210,250,0.85)", 0.88, "rgba(236,244,255,0.94)"];
-
-function geo() {
-  const t = tempo(), ev = filtrati();
+// ---------- strati: eco a bassa quota, anelli netti da vicino ----------
+// Ogni punto porta i valori di tutti i fotogrammi (w0…, b0…, o0…): cambiare fotogramma cambia solo la pittura, senza ricaricare i dati.
+let rivela = calmo() ? 1 : 0;
+function punti() {
+  const ev = filtrati();
   return {
-    punti: { type: "FeatureCollection", features: ev.map((e) => {
-      const w = peso(e, t), r = rivelato[e.id] ?? (scansionato ? 1 : 0);
-      const visibile = w > 0 || (st.i === I_ORA && e.stato === "annunciato" && +new Date(e.inizio) - +ORA < 3 * 864e5);
-      return { type: "Feature", geometry: { type: "Point", coordinates: e.lngLat },
-        properties: { id: e.id, w: w * Math.min(1, r), icon: `${e.tipo}-${variante(e)}`, nome: e.comune, op: visibile ? Math.min(1, r) : 0, sel: st.sel === e.id ? 1 : 0 } };
-    }) },
-    aree: { type: "FeatureCollection", features: ev.filter((e) => e.precisione === "comune" && (peso(e, t) > 0 || st.sel === e.id)).map((e) => ({ type: "Feature", geometry: { type: "Polygon", coordinates: [cerchio(e.lngLat, 3)] }, properties: {} })) },
-    tratti: { type: "FeatureCollection", features: ev.filter((e) => e.tratto && (peso(e, t) > 0 || st.sel === e.id)).map((e) => ({ type: "Feature", geometry: { type: "LineString", coordinates: e.tratto }, properties: {} })) },
+    type: "FeatureCollection", features: ev.map((e) => {
+      const p: Record<string, any> = { id: e.id, icon: `${e.tipo}-${variante(e)}`, nome: e.comune, sel: st.sel === e.id ? 1 : 0 };
+      FOTO.forEach((f, i) => {
+        const w = peso(e, f);
+        p[`w${i}`] = w; p[`b${i}`] = banda(w).k;
+        p[`o${i}`] = w > 0 || st.sel === e.id || (i === I_ORA && e.stato === "annunciato" && +new Date(e.inizio) - +ORA < 3 * 864e5) ? 1 : 0;
+      });
+      return { type: "Feature", geometry: { type: "Point", coordinates: e.lngLat }, properties: p };
+    }),
   };
 }
-map.on("style.load", () => {
-  if (map.getSource("punti")) return;
+function contorni() {
+  const ev = filtrati(), pr = (e: Evento) => { const p: Record<string, number> = { sel: st.sel === e.id ? 1 : 0 }; FOTO.forEach((f, i) => (p[`w${i}`] = peso(e, f))); return p; };
+  return {
+    aree: { type: "FeatureCollection", features: ev.filter((e) => e.precisione === "comune").map((e) => ({ type: "Feature", geometry: { type: "Polygon", coordinates: [cerchio(e.lngLat, 3)] }, properties: pr(e) })) },
+    tratti: { type: "FeatureCollection", features: ev.filter((e) => e.tratto).map((e) => ({ type: "Feature", geometry: { type: "LineString", coordinates: e.tratto }, properties: pr(e) })) },
+  };
+}
+const RAMPA = {
+  oss: ["rgba(18,96,104,0.38)", "rgba(24,148,146,0.56)", "rgba(72,212,186,0.74)", "rgba(170,247,224,0.88)", "rgba(240,255,251,0.96)"],
+  prev: ["rgba(36,62,112,0.38)", "rgba(58,104,176,0.54)", "rgba(110,160,228,0.7)", "rgba(182,210,250,0.85)", "rgba(236,244,255,0.94)"],
+};
+const ANELLI = { oss: ["#18948f", "#48d4ba", "#aaf7e0"], prev: ["#3a68b0", "#6ea0e4", "#b6d2fa"] };
+const rampa = (k: "oss" | "prev") => ["step", ["heatmap-density"], "rgba(0,0,0,0)", 0.05, RAMPA[k][0], 0.2, RAMPA[k][1], 0.42, RAMPA[k][2], 0.66, RAMPA[k][3], 0.88, RAMPA[k][4]];
+const visibile = (i: number) => ["any", ["==", ["get", "sel"], 1], [">", ["get", `w${i}`], 0]];
+
+let pronta = false;
+map.on("style.load", async () => {
+  // il primo stile è solo lo sfondo provvisorio: si aspetta quello con le immagini satellitari
+  if (!map.getSource("satellite") || map.getSource("punti")) return;
   for (const t of ORDINE_TIPI) for (const v of ["pieno", "vuoto", "utenti", "concluso", "discorde"]) if (!map.hasImage(`${t}-${v}`)) map.addImage(`${t}-${v}`, icona(t, v), { pixelRatio: 2 });
-  const d = geo();
-  map.addSource("aree", { type: "geojson", data: d.aree }); map.addSource("tratti", { type: "geojson", data: d.tratti }); map.addSource("punti", { type: "geojson", data: d.punti });
-  fetch("../../regioni.json").then((r) => r.json()).then((rg) => {
-    map.addSource("regioni", { type: "geojson", data: rg });
-    map.addLayer({ id: "regioni-line", type: "line", source: "regioni", paint: { "line-color": "rgba(200,232,226,.2)", "line-width": 0.6 } }, "eco");
-  }).catch(() => {});
-  map.addLayer({ id: "eco", type: "heatmap", source: "punti", maxzoom: 14, paint: {
-    "heatmap-weight": ["get", "w"],
+  const c = contorni();
+  map.addSource("punti", { type: "geojson", data: punti() });
+  map.addSource("aree", { type: "geojson", data: c.aree }); map.addSource("tratti", { type: "geojson", data: c.tratti });
+  map.addLayer({ id: "eco", type: "heatmap", source: "punti", maxzoom: 10, paint: {
+    "heatmap-weight": 0,
     "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 3, 2.2, 6, 3, 9, 2],
-    "heatmap-radius": ["interpolate", ["exponential", 2], ["zoom"], 2, 11, 5, 36, 8, 120, 11, 300],
-    "heatmap-color": RAMPA_OSS,
-    "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 8, 1, 12, 0.3],
+    // dimensione in pixel limitata: oltre lo zoom 7 l'eco non cresce più e sfuma
+    "heatmap-radius": ["interpolate", ["exponential", 2], ["zoom"], 2, 11, 5, 36, 7, 64, 10, 64],
+    "heatmap-color": rampa("oss"),
+    "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 6.5, 1, 8.5, 0],
   } });
-  map.addLayer({ id: "aree-line", type: "line", source: "aree", minzoom: 8, paint: { "line-color": "#f1fbf8", "line-opacity": 0.7, "line-width": 1.2, "line-dasharray": [3, 3] } });
-  map.addLayer({ id: "tratti", type: "line", source: "tratti", layout: { "line-join": "round" }, paint: { "line-color": "#f1fbf8", "line-width": 3, "line-dasharray": [2, 1] } });
+  for (const k of [1, 2, 3]) map.addLayer({ id: `anello${k}`, type: "circle", source: "punti", minzoom: 6.3, paint: {
+    "circle-radius": 8 + k * 9, "circle-color": "rgba(0,0,0,0)", "circle-stroke-width": k === 3 ? 1.5 : 1.2,
+    "circle-stroke-color": ANELLI.oss[k - 1], "circle-stroke-opacity": 0, "circle-pitch-alignment": "map",
+  } });
+  map.addLayer({ id: "impulso", type: "circle", source: "punti", paint: { "circle-radius": 0, "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": "#aaf7e0", "circle-stroke-width": 1.5, "circle-stroke-opacity": 0 } });
+  map.addLayer({ id: "aree-line", type: "line", source: "aree", minzoom: 8, paint: { "line-color": "#f1fbf8", "line-opacity": 0, "line-width": 1.2, "line-dasharray": [3, 3] } });
+  map.addLayer({ id: "tratti", type: "line", source: "tratti", layout: { "line-join": "round" }, paint: { "line-color": "#f1fbf8", "line-opacity": 0, "line-width": 3, "line-dasharray": [2, 1] } });
   map.addLayer({ id: "icone", type: "symbol", source: "punti", layout: { "icon-image": ["get", "icon"], "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.56, 7, 0.75, 10, 0.95, 14, 1.15], "icon-allow-overlap": true, "icon-ignore-placement": true },
-    paint: { "icon-opacity": ["get", "op"] } });
-  if (map.getStyle().glyphs) map.addLayer({ id: "nomi", type: "symbol", source: "punti", minzoom: 5.4, filter: [">", ["get", "op"], 0.5],
+    paint: { "icon-opacity": 0, "icon-opacity-transition": { duration: 0 } } });
+  if (map.getStyle().glyphs) map.addLayer({ id: "nomi", type: "symbol", source: "punti", minzoom: 6, filter: ["==", ["get", `o${I_ORA}`], 1],
     layout: { "text-field": ["get", "nome"], "text-font": ["Noto Sans Regular"], "text-size": 12, "text-offset": [0, 1.3], "text-anchor": "top", "text-optional": true },
     paint: { "text-color": "#f1fbf8", "text-halo-color": "#04070a", "text-halo-width": 1.5 } });
   map.on("click", (ev: any) => {
-    const p = ev.point, f = map.queryRenderedFeatures([[p.x - 18, p.y - 18], [p.x + 18, p.y + 18]], { layers: ["icone"] }).filter((x: any) => x.properties.op > 0.5);
+    const p = ev.point, f = map.queryRenderedFeatures([[p.x - 22, p.y - 22], [p.x + 22, p.y + 22]], { layers: ["icone"] }).filter((x: any) => x.properties[`o${st.i}`] === 1);
     if (f.length) apri(f[0].properties.id, false);
   });
   map.on("mousemove", (ev: any) => { const p = ev.point; map.getCanvas().style.cursor = map.queryRenderedFeatures([[p.x - 14, p.y - 14], [p.x + 14, p.y + 14]], { layers: ["icone"] }).length ? "pointer" : ""; });
-  aggiornaMappa();
+  dipingi();
+  const rg = await regioniPronte;
+  if (rg) { map.addSource("regioni", { type: "geojson", data: rg }); map.addLayer({ id: "regioni-line", type: "line", source: "regioni", paint: { "line-color": "rgba(200,232,226,.2)", "line-width": 0.6 } }, "eco"); }
+  // dati, stile e regioni sono pronti: gli echi non aspettano le immagini satellitari oltre 1 secondo
+  let fatto = false;
+  const via = () => { if (fatto) return; fatto = true; pronta = true; comparsa(); };
+  if (map.loaded()) via(); else { map.once("idle", via); setTimeout(via, 1000); }
 });
-function aggiornaMappa() {
-  const d = geo();
-  map.getSource("punti")?.setData(d.punti); map.getSource("aree")?.setData(d.aree); map.getSource("tratti")?.setData(d.tratti);
-  if (map.getLayer("eco")) map.setPaintProperty("eco", "heatmap-color", futuro() ? RAMPA_PREV : RAMPA_OSS);
+setTimeout(() => { if (!pronta && !senzaMappa && !map.isStyleLoaded?.()) erroreMappa("Il servizio delle immagini non risponde."); }, 15000);
+
+let modo: "oss" | "prev" | "" = "";
+function dipingi() {
+  if (!map.getLayer?.("eco")) return;
+  const i = st.i, m = futuro() ? "prev" : "oss";
+  map.setPaintProperty("eco", "heatmap-weight", ["*", ["get", `w${i}`], rivela]);
+  map.setPaintProperty("icone", "icon-opacity", ["*", ["get", `o${i}`], Math.min(1, rivela * 1.4)]);
+  // lo zoom deve stare al primo livello dell'espressione: da 6.3 a 8 gli anelli sostituiscono l'eco
+  for (const k of [1, 2, 3]) map.setPaintProperty(`anello${k}`, "circle-stroke-opacity", ["interpolate", ["linear"], ["zoom"], 6.3, 0, 8, ["*", ["case", [">=", ["get", `b${i}`], k], 0.95 - k * 0.15, 0], rivela]]);
+  map.setPaintProperty("aree-line", "line-opacity", ["case", visibile(i), 0.7, 0]);
+  map.setPaintProperty("tratti", "line-opacity", ["case", visibile(i), 1, 0]);
+  if (map.getLayer("nomi")) map.setFilter("nomi", ["==", ["get", `o${i}`], 1]);
+  if (m !== modo) {
+    modo = m;
+    map.setPaintProperty("eco", "heatmap-color", rampa(m));
+    for (const k of [1, 2, 3]) map.setPaintProperty(`anello${k}`, "circle-stroke-color", ANELLI[m][k - 1]);
+  }
+}
+function ricarica() {
+  if (!map.getSource?.("punti")) return;
+  const c = contorni();
+  map.getSource("punti").setData(punti()); map.getSource("aree").setData(c.aree); map.getSource("tratti").setData(c.tratti);
+  dipingi();
 }
 
-// ---------- scansione iniziale: il fascio del radar rivela gli echi ----------
-const sweep = $("#sweep") as unknown as HTMLCanvasElement;
-let scansioneViva = false;
-function saltaScansione() {
-  if (scansionato) return;
-  scansioneViva = false; scansionato = true;
-  for (const e of EVENTI) rivelato[e.id] = 1;
-  sweep.getContext("2d")!.clearRect(0, 0, sweep.width, sweep.height); sweep.classList.remove("on");
-  avvio.chiudi(); aggiornaMappa();
-}
-function scansione() {
-  if (scansionato) return;
-  const box = $("#mapbox"), dpr = Math.min(2, devicePixelRatio || 1);
-  sweep.width = box.clientWidth * dpr; sweep.height = box.clientHeight * dpr; sweep.classList.add("on");
-  const ctx = sweep.getContext("2d")!, DUR = 950, t0 = performance.now(), a0 = -Math.PI / 2, coda = 0.9;
-  const visti = new Set<string>();
-  scansioneViva = true;
-  const passo = (now: number) => {
-    if (!scansioneViva) return;
-    const p = Math.min(1, (now - t0) / DUR), a = a0 + p * Math.PI * 2;
-    const c = map.project(CENTRO_RADAR), cx = c.x * dpr, cy = c.y * dpr, R = Math.hypot(sweep.width, sweep.height);
-    ctx.clearRect(0, 0, sweep.width, sweep.height);
-    // anelli di distanza, solo durante la scansione
-    ctx.strokeStyle = `rgba(150,240,214,${0.16 * (1 - p)})`; ctx.lineWidth = dpr; ctx.setLineDash([2 * dpr, 4 * dpr]);
-    for (const k of [1, 2, 3, 4]) { ctx.beginPath(); ctx.arc(cx, cy, k * 110 * dpr, 0, Math.PI * 2); ctx.stroke(); }
-    ctx.setLineDash([]);
-    // fascio con scia
-    const g = ctx.createConicGradient(a - coda, cx, cy);
-    g.addColorStop(0, "rgba(97,232,198,0)"); g.addColorStop(coda / (Math.PI * 2), "rgba(97,232,198,0.2)"); g.addColorStop(coda / (Math.PI * 2) + 0.001, "rgba(97,232,198,0)"); g.addColorStop(1, "rgba(97,232,198,0)");
-    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, R, a - coda, a); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = "rgba(190,255,236,.85)"; ctx.lineWidth = 1.5 * dpr; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(a) * R, cy + Math.sin(a) * R); ctx.stroke();
-    // rivela gli echi appena il fascio li supera
-    let cambiato = false;
-    for (const e of EVENTI) {
-      const q = map.project(e.lngLat);
-      let b = Math.atan2(q.y - c.y, q.x - c.x) - a0; while (b < 0) b += Math.PI * 2;
-      if (b <= a - a0 && !visti.has(e.id)) { visti.add(e.id); rivelato[e.id] = 0.001; cambiato = true; }
-    }
-    for (const id of visti) if (rivelato[id] < 1) { rivelato[id] = Math.min(1, rivelato[id] + 0.12); cambiato = true; }
-    if (cambiato) aggiornaMappa();
-    if (p < 1) requestAnimationFrame(passo);
-    else { sweep.classList.remove("on"); setTimeout(() => ctx.clearRect(0, 0, sweep.width, sweep.height), 260); scansionato = true; scansioneViva = false; for (const e of EVENTI) rivelato[e.id] = 1; aggiornaMappa(); avvio.chiudi(); }
+// ---------- comparsa: gli echi salgono e un impulso parte da ciascuno (≤ 600 ms) ----------
+function comparsa() {
+  loader.classList.add("off");
+  occupato(false);
+  orologio(true);
+  if (calmo()) { rivela = 1; dipingi(); return; }
+  const t0 = performance.now();
+  map.setPaintProperty("impulso", "circle-stroke-opacity", ["*", ["get", `o${st.i}`], 0]);
+  const giro = (t: number) => {
+    const p = Math.max(0, Math.min(1, (t - t0) / MOTO.reveal)), e = 1 - Math.pow(1 - p, 4);
+    rivela = e; dipingi();
+    map.setPaintProperty("impulso", "circle-radius", 4 + e * 24);
+    map.setPaintProperty("impulso", "circle-stroke-opacity", ["*", ["get", `o${st.i}`], 0.8 * (1 - p)]);
+    if (p < 1) requestAnimationFrame(giro);
   };
-  requestAnimationFrame(passo);
+  requestAnimationFrame(giro);
 }
-
-// ---------- avvio: tre righe che si decodificano, saltabili ----------
-const avvio = (() => {
-  const hud = $("#hud-time");
-  const ev = EVENTI.length, fonti = EVENTI.reduce((a, e) => a + e.fonti.length, 0);
-  const righe = [`ACQUISIZIONE ${fonti} FONTI · ${ev} EVENTI`, `SOGLIA DI PUBBLICAZIONE ${SOGLIA.toFixed(2)}`, "SCANSIONE ITALIA"];
-  let chiuso = false;
-  function chiudi() { if (chiuso) return; chiuso = true; document.body.classList.remove("booting"); orologio(true); }
-  if (calmo()) { chiuso = true; return { chiudi }; }
-  document.body.classList.add("booting");
-  hud.innerHTML = `<div class="boot">${righe.map(() => `<span></span>`).join("")}</div>`;
-  const spans = hud.querySelectorAll(".boot span");
-  righe.forEach((r, k) => setTimeout(() => !chiuso && decodifica(spans[k], r, 220), k * 260));
-  return { chiudi };
-})();
-for (const t of ["pointerdown", "keydown", "wheel"]) addEventListener(t, () => { if (!scansionato) saltaScansione(); }, { once: true, passive: true });
 
 // ---------- orologio e anello del tempo ----------
 function orologio(decod = false) {
-  const t = tempo(), hud = $("#hud-time");
-  if (document.body.classList.contains("booting")) return;
-  const quando = `${settimana(t)} ${dataOra(t)}`.toUpperCase();
-  const modo = st.i === I_ORA ? "Osservato · ora" : futuro() ? `Previsione · +${Math.round((t - +ORA) / H)} h` : `Osservato · −${Math.round((+ORA - t) / H)} h`;
-  hud.innerHTML = `<span class="hud-when fig"></span><span class="hud-mode ${futuro() ? "prev" : ""}"><i></i>${modo}</span>`;
-  const w = hud.querySelector(".hud-when")!;
-  if (decod) decodifica(w, quando, 200); else w.textContent = quando;
-  $("#loop-time").textContent = st.i === I_ORA ? `Ora · ${dataOra(t)}` : dataOra(t);
-  $("#loop-mode").textContent = futuro() ? "Previsione da eventi annunciati" : st.i === I_ORA ? "Ultimo aggiornamento" : "Archivio osservato";
-  $("#loop-mode").className = `loop-mode ${futuro() ? "prev" : ""}`;
+  const f = foto(), hud = $("#hud-time");
+  const quando = etichettaFoto(f).toUpperCase();
+  const modo = st.i === I_ORA ? "Osservato · ora" : f.prev ? `Previsione · tra ${(f.a - +ORA) / H < 48 ? `${Math.round((f.a - +ORA) / H)} h` : `${Math.round((f.a - +ORA) / 864e5)} g`}` : `Osservato · ${Math.round((+ORA - f.b) / H)} h fa`;
+  let w = hud.querySelector(".hud-when");
+  if (!w) { hud.innerHTML = `<span class="hud-row"><span class="hud-when fig"></span><span class="hud-spin">${radar(14)}</span></span><span class="hud-mode"><i></i><span></span></span>`; w = hud.querySelector(".hud-when"); }
+  if (decod) decodifica(w!, quando); else { inCorso.set(w!, (inCorso.get(w!) || 0) + 1); w!.textContent = quando; }
+  const m = hud.querySelector(".hud-mode")!; m.className = `hud-mode ${f.prev ? "prev" : ""}`; m.querySelector("span")!.textContent = modo;
+  $("#loop-time").textContent = st.i === I_ORA ? `Ora · ${dataOra(f.b)}` : f.prev ? `${giorno(f.a)} ${ora(f.a)}–${ora(f.b)}` : dataOra(f.b);
+  $("#loop-mode").textContent = f.prev ? "Previsione da eventi annunciati" : st.i === I_ORA ? "Ultimo aggiornamento" : "Archivio osservato";
+  $("#loop-mode").className = `loop-mode ${f.prev ? "prev" : ""}`;
   $("#now").hidden = st.i === I_ORA;
 }
+// la mappa sta ancora disegnando? mostra il radar piccolo accanto all'ora, solo se l'attesa si vede
+let attesa = 0;
+function attendiMappa() {
+  clearTimeout(attesa);
+  if (senzaMappa || !pronta || st.play) return;
+  attesa = window.setTimeout(() => {
+    if (map.loaded()) return;
+    $("#hud-time").classList.add("loading"); occupato(true);
+    map.once("idle", () => { $("#hud-time").classList.remove("loading"); occupato(false); });
+  }, 140);
+}
+const xTraccia = (i: number) => i / (N - 1);
 function traccia() {
-  const box = $("#track-svg"), w = Math.max(240, box.clientWidth), h = desktop() ? 44 : 38, base = h - 12, n = FOTO.length;
-  const x = (i: number) => 6 + (i / (n - 1)) * (w - 12);
-  const somme = FOTO.map((t) => filtrati().reduce((a, e) => a + peso(e, t), 0)), max = Math.max(1, ...somme);
+  const box = $("#track-svg"), w = Math.max(240, box.clientWidth), h = 46, base = 30, pad = 6;
+  const x = (i: number) => pad + xTraccia(i) * (w - 2 * pad);
+  const somme = FOTO.map((f) => filtrati().reduce((a, e) => a + peso(e, f), 0)), max = Math.max(1, ...somme);
   let s = `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true">`;
-  const bw = Math.max(1.5, (w - 12) / n - 1.2);
+  const cella = (w - 2 * pad) / (N - 1), bw = Math.max(2, cella - 2);
   somme.forEach((v, i) => {
     if (v <= 0) return;
-    const bh = Math.max(2, (v / max) * (base - 6));
-    s += `<rect class="hb ${i > I_ORA ? "prev" : ""} ${i <= st.i ? "past" : ""}" x="${x(i) - bw / 2}" y="${base - bh}" width="${bw}" height="${bh}"/>`;
+    const bh = Math.max(2, (v / max) * (base - 8));
+    s += `<rect class="hb ${FOTO[i].prev ? "prev" : ""}" data-i="${i}" x="${x(i) - bw / 2}" y="${base - bh}" width="${bw}" height="${bh}" rx="1"/>`;
   });
-  // mezzanotti
-  const iDa = (t: number) => t <= +ORA ? (t - FOTO[0]) / H : I_ORA + (t - +ORA) / (3 * H);
-  const d0 = new Date(FOTO[0]); d0.setHours(24, 0, 0, 0);
+  // mezzanotti, con un'etichetta solo se non tocca "ora"
+  const iDa = (t: number) => t <= +ORA ? 24 - (+ORA - t) / H : I_ORA + (t - +ORA) / (6 * H);
+  const d0 = new Date(FOTO[0].b); d0.setHours(24, 0, 0, 0);
+  const xOra = x(I_ORA), largo = desktop() ? 44 : 38;
   let ultimo = -99;
-  for (let t = +d0; t <= FOTO[n - 1]; t += 864e5) {
+  for (let t = +d0; t <= FOTO[N - 1].b; t += 864e5) {
     const xx = x(iDa(t));
     s += `<line class="tk" x1="${xx}" x2="${xx}" y1="${base}" y2="${base + 4}"/>`;
-    if (xx - ultimo > (desktop() ? 46 : 34) && Math.abs(xx - x(I_ORA)) > (desktop() ? 30 : 40)) { s += `<text class="tt" x="${xx}" y="${h - 1}" text-anchor="middle">${new Date(t).getDate()}/${new Date(t).getMonth() + 1}</text>`; ultimo = xx; }
+    if (xx - ultimo > largo && Math.abs(xx - xOra) > largo && xx < w - 16) { s += `<text class="tt" x="${xx}" y="${h - 2}" text-anchor="middle">${new Date(t).getDate()}/${new Date(t).getMonth() + 1}</text>`; ultimo = xx; }
   }
-  s += `<line class="base" x1="6" x2="${w - 6}" y1="${base}" y2="${base}"/>`;
-  s += `<line class="ora" x1="${x(I_ORA)}" x2="${x(I_ORA)}" y1="2" y2="${base + 4}"/><text class="tt ora" x="${x(I_ORA)}" y="${h - 1}" text-anchor="middle">ora</text>`;
-  s += `<g class="thumb" transform="translate(${x(st.i)},0)"><line y1="0" y2="${base}"/><rect x="-4" y="${base - 4}" width="8" height="8" transform="rotate(45 0 ${base})"/></g>`;
+  s += `<line class="base" x1="${pad}" x2="${w - pad}" y1="${base}" y2="${base}"/>`;
+  s += `<line class="ora" x1="${xOra}" x2="${xOra}" y1="4" y2="${base + 4}"/><text class="tt ora" x="${xOra}" y="${h - 2}" text-anchor="middle">ora</text>`;
   box.innerHTML = s + "</svg>";
+  const th = $("#thumb"); th.style.setProperty("--pad", `${pad}px`); th.style.setProperty("--base", `${base}px`);
+  segnaTraccia();
+}
+function segnaTraccia() {
+  $("#track-svg").querySelectorAll<SVGRectElement>(".hb").forEach((r) => r.classList.toggle("past", +r.dataset.i! <= st.i));
+  $("#thumb").style.setProperty("--x", String(xTraccia(st.i)));
 }
 const scrub = $("#scrub") as HTMLInputElement;
-function vaiA(i: number, daUtente = true) {
-  st.i = Math.max(0, Math.min(FOTO.length - 1, i));
+scrub.max = String(N - 1); scrub.value = String(I_ORA);
+function vaiA(i: number) {
+  st.i = Math.max(0, Math.min(N - 1, i));
   scrub.value = String(st.i);
-  scrub.setAttribute("aria-valuetext", `${dataOra(tempo())}${futuro() ? ", previsione" : ""}`);
-  if (daUtente && !scansionato) saltaScansione();
-  aggiornaMappa(); orologio(); traccia(); elencoVivo();
+  scrub.setAttribute("aria-valuetext", `${etichettaFoto(foto())}${futuro() ? ", previsione" : ""}`);
+  dipingi(); orologio(); segnaTraccia(); elencoVivo(); attendiMappa();
 }
 scrub.addEventListener("input", () => { ferma(); vaiA(+scrub.value); });
 $("#now").addEventListener("click", () => { ferma(); vaiA(I_ORA); });
 let timer = 0;
-function ferma() { st.play = false; clearTimeout(timer); $("#play").setAttribute("aria-pressed", "false"); $("#play").setAttribute("aria-label", "Avvia l'animazione"); }
+function ferma() { st.play = false; clearInterval(timer); document.body.classList.remove("playing"); $("#play").setAttribute("aria-pressed", "false"); $("#play").setAttribute("aria-label", "Avvia l'animazione"); }
 function avvia() {
-  st.play = true; $("#play").setAttribute("aria-pressed", "true"); $("#play").setAttribute("aria-label", "Metti in pausa l'animazione");
-  if (st.i >= FOTO.length - 1 || st.i === I_ORA) vaiA(Math.max(0, FOTO.findIndex((t) => filtrati().some((e) => peso(e, t) > 0)) - 1), false);
-  const passo = () => {
-    if (!st.play) return;
-    if (st.i >= FOTO.length - 1) { ferma(); return; }
-    vaiA(st.i + 1, false);
-    timer = window.setTimeout(passo, st.i < I_ORA ? 110 : 75);
-  };
-  timer = window.setTimeout(passo, 60);
+  st.play = true; document.body.classList.add("playing");
+  $("#play").setAttribute("aria-pressed", "true"); $("#play").setAttribute("aria-label", "Metti in pausa l'animazione");
+  // un radar meteo riparte dal passato: dal primo fotogramma con almeno un'eco
+  if (st.i >= N - 1 || st.i === I_ORA) vaiA(Math.max(0, FOTO.findIndex((f) => filtrati().some((e) => peso(e, f) > 0)) - 1));
+  timer = window.setInterval(() => {
+    if (st.i >= N - 1) { ferma(); return; }
+    vaiA(st.i + 1);
+  }, MOTO.passo);
 }
-$("#play").addEventListener("click", () => { if (!scansionato) saltaScansione(); st.play ? ferma() : avvia(); });
+$("#play").addEventListener("click", () => (st.play ? ferma() : avvia()));
 addEventListener("keydown", (ev) => {
   const t = ev.target as HTMLElement;
   if (ev.key === "Escape" && st.sel) chiudi();
@@ -390,75 +470,74 @@ addEventListener("keydown", (ev) => {
 // ---------- pannello ----------
 const body = $("#panel-body"), panel = $("#panel"), detail = $("#detail");
 function barre(k: number) { return `<span class="bars b${k}" aria-hidden="true"><i></i><i></i><i></i></span>`; }
-function riga(e: Evento, t: number) {
-  const c = credibilita(e), w = peso(e, t), b = banda(w || intensita(e));
-  const quando = w > 0 ? (e.stato === "in_corso" && t === +ORA ? `In corso da ${ora(e.inizio)}` : `Attivo, ${dataOra(e.inizio)}`) : `${STATI[e.stato]}, ${dataOra(e.inizio)}`;
+function riga(e: Evento, f: Foto) {
+  const c = credibilita(e), w = peso(e, f), b = banda(w);
+  const quando = w > 0 ? (e.stato === "in_corso" && st.i === I_ORA ? `In corso da ${ora(e.inizio)}` : `Attivo, dal ${dataOra(e.inizio)}`) : `${STATI[e.stato]}, ${dataOra(e.inizio)}`;
   return `<button class="row" role="listitem" data-id="${e.id}" aria-current="${st.sel === e.id}">
     <span class="ic">${simbolo(e.tipo, variante(e), 16)}</span>
     <span class="t">${titolo(e)}</span>
-    <span class="eco ${w > 0 ? "" : "off"}">${barre(w > 0 ? b.k : 0)}<span>${w > 0 ? `Eco ${b.label}` : "Nessuna eco"}</span></span>
+    <span class="eco ${w > 0 ? "" : "off"}">${barre(b.k)}<span>${w > 0 ? `Eco ${b.label}` : "Nessuna eco"}</span></span>
     <span class="m"><span>${quando}</span><span class="pill ${c.cls}">${c.label}</span></span></button>`;
 }
-function scoperta(t: number) {
-  const att = attiviA(t);
-  const disc = att.find((e) => e.contraddittorio);
-  const quando = st.i === I_ORA ? "Ora" : futuro() ? `Previsto per ${settimana(t)} ${dataOra(t)}` : `Alle ${ora(t)} del ${giorno(t)}`;
+function scoperta(f: Foto) {
+  const att = attivi(f), disc = att.find((e) => e.contraddittorio);
+  const quando = st.i === I_ORA ? "Ora" : f.prev ? `Previsti ${settimana(f.a)} ${giorno(f.a)}, ${ora(f.a)}–${ora(f.b)}` : `Alle ${ora(f.b)} del ${giorno(f.b)}`;
   if (!att.length) return `<p><b>${quando}</b>: nessuna eco con questi filtri.</p>`;
-  const top = att[0], sud = att.filter((e) => ["Calabria", "Sicilia", "Puglia", "Campania", "Basilicata"].includes(e.regione)).length;
-  return `<p><b>${quando}</b>: ${att.length} ${att.length === 1 ? "evento attivo" : "eventi attivi"}${sud ? (sud === att.length ? (att.length > 1 ? ", tutti al Sud" : ", al Sud") : `, ${sud} al Sud`) : ""}. Eco più forte: <button class="link" data-id="${top.id}">${titolo(top).toLowerCase()}</button>, ${credibilita(top).label.toLowerCase()}.${disc ? ` A ${disc.comune} le fonti sono discordanti.` : ""}</p>`;
+  const top = att[0], sud = att.filter((e) => SUD.includes(e.regione)).length;
+  const dove = sud ? (sud === att.length ? (att.length > 1 ? ", tutti al Sud" : ", al Sud") : `, ${sud} al Sud`) : "";
+  return `<p><b>${quando}</b>: ${att.length} ${att.length === 1 ? "evento attivo" : "eventi attivi"}${dove}. Eco più forte: <button class="link" data-id="${top.id}">${titolo(top).toLowerCase()}</button>, ${credibilita(top).label.toLowerCase()}.${disc ? ` A ${disc.comune} le fonti sono discordanti.` : ""}</p>`;
 }
-let firmaElenco = "";
-function elencoVivo() {
-  const t = tempo(), ids = attiviA(t).map((e) => e.id).join(",") + "|" + st.i;
-  if (st.vista !== "elenco" || (!desktop() && st.sel)) return;
-  const f = $("#finding"); if (f) f.innerHTML = scoperta(t);
-  const fig = $("#figures"); if (fig) fig.innerHTML = cifre(t);
-  if (ids !== firmaElenco) { firmaElenco = ids; const l = $("#lista"); if (l) l.innerHTML = lista(t); }
-}
-function cifre(t: number) {
-  const att = attiviA(t), forti = att.filter((e) => banda(peso(e, t)).k === 3).length;
-  const ann = filtrati().filter((e) => e.stato === "annunciato" && +new Date(e.inizio) > t && +new Date(e.inizio) - t < 7 * 864e5).length;
+function cifre(f: Foto) {
+  const att = attivi(f), forti = att.filter((e) => banda(peso(e, f)).k === 3).length;
+  const ann = filtrati().filter((e) => e.stato === "annunciato" && +new Date(e.inizio) > f.b && +new Date(e.inizio) - f.b < 7 * 864e5).length;
   return `<div><span class="n fig">${att.length}</span><span class="l">Attivi</span></div><div><span class="n fig">${forti}</span><span class="l">Eco forte</span></div><div><span class="n fig">${ann}</span><span class="l">Annunciati, 7 g</span></div>`;
 }
-function lista(t: number) {
-  const att = attiviA(t), resto = filtrati().filter((e) => !att.includes(e)).sort((a, b) => +new Date(a.inizio) - +new Date(b.inizio));
-  return `${att.length ? `<h2>Attivi ${st.i === I_ORA ? "ora" : `il ${dataOra(t)}`} <span class="fig">${att.length}</span></h2><div class="list" role="list">${att.map((e) => riga(e, t)).join("")}</div>` : ""}
-    ${resto.length ? `<h2>Altri nel periodo <span class="fig">${resto.length}</span></h2><div class="list" role="list">${resto.map((e) => riga(e, t)).join("")}</div>` : ""}
-    ${!att.length && !resto.length ? `<p class="empty">Nessun evento con questi filtri. Riattiva un tipo.</p>` : ""}`;
+function lista(f: Foto) {
+  const att = attivi(f), resto = filtrati().filter((e) => !att.includes(e)).sort((a, b) => +new Date(a.inizio) - +new Date(b.inizio));
+  const quando = st.i === I_ORA ? "ora" : f.prev ? `${giorno(f.a)}, ${ora(f.a)}–${ora(f.b)}` : `alle ${ora(f.b)} del ${giorno(f.b)}`;
+  return `${att.length ? `<h2>Attivi ${quando} <span class="fig">${att.length}</span></h2><div class="list" role="list">${att.map((e) => riga(e, f)).join("")}</div>` : `<h2>Attivi ${quando} <span class="fig">0</span></h2><p class="empty">Nessun evento attivo in questo intervallo. Trascina il tempo o premi «Torna a ora».</p>`}
+    ${resto.length ? `<h2>Altri nel periodo <span class="fig">${resto.length}</span></h2><div class="list" role="list">${resto.map((e) => riga(e, f)).join("")}</div>` : ""}`;
+}
+function elencoVivo() {
+  if (st.vista !== "elenco" || (!desktop() && st.sel)) return;
+  const f = foto();
+  const a = $("#finding"); if (a) a.innerHTML = scoperta(f);
+  const b = $("#figures"); if (b) b.innerHTML = cifre(f);
+  const l = $("#lista"); if (l) l.innerHTML = lista(f);
 }
 function legenda() {
   return `<section class="legend" aria-label="Legenda">
+    <h2>Come leggere il radar</h2>
     <div class="scale"><span class="sw s1"></span><span class="sw s2"></span><span class="sw s3"></span><span class="sw s4"></span><span class="sw s5"></span></div>
     <div class="scale-cap"><span>debole</span><span>moderata</span><span>forte</span></div>
-    <p>L'eco cresce con la gravità del tipo e con la conferma delle fonti. Nel futuro l'eco diventa <b class="prevtxt">azzurra</b>: è una previsione dagli annunci.</p>
-    <div class="shapes">${simbolo("blocco", "pieno", 13)} In corso ${simbolo("blocco", "vuoto", 13)} Annunciato ${simbolo("blocco", "utenti", 13)} Solo segnalazioni ${simbolo("blocco", "discorde", 13)} Discordante</div>
+    <p>L'eco cresce con la gravità del tipo e con la conferma delle fonti. Da vicino diventa uno, due o tre anelli. Nel futuro l'eco è <b class="prevtxt">azzurra</b>: è una previsione dagli annunci.</p>
+    <ul class="shapes"><li>${simbolo("blocco", "pieno", 14)}In corso</li><li>${simbolo("blocco", "vuoto", 14)}Annunciato</li><li>${simbolo("blocco", "utenti", 14)}Solo segnalazioni</li><li>${simbolo("blocco", "discorde", 14)}Fonti discordanti</li></ul>
   </section>`;
 }
 function situazione() {
-  const t = tempo();
-  st.vista = "elenco"; firmaElenco = "";
+  const f = foto();
+  st.vista = "elenco"; panel.classList.remove("evento");
   body.innerHTML = `
-  <header class="title"><div class="title-row"><h1><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6" opacity=".6"/><path d="M12 12L19 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>ORACLE IT</h1><span class="test">Dati di prova</span></div>
+  <header class="title"><div class="title-row"><h1><span class="mark">${radar(22, "brand")}</span>ORACLE IT</h1><span class="test">Dati di prova</span></div>
     <p class="sub">Radar delle mobilitazioni in Italia. Eventi e fonti di questa pagina sono inventati.</p></header>
-  <section class="finding" id="finding" aria-live="polite">${scoperta(t)}</section>
-  <div class="figures" id="figures">${cifre(t)}</div>
+  <section class="finding" id="finding">${scoperta(f)}</section>
+  <div class="figures" id="figures">${cifre(f)}</div>
   <div class="types" role="group" aria-label="Tipi di evento">${ORDINE_TIPI.map((k) => `<button class="type" data-tipo="${k}" aria-pressed="${st.tipi.has(k)}">${simbolo(k, "pieno", 13)}${TIPI[k].plur}</button>`).join("")}</div>
-  <section class="block" id="lista">${lista(t)}</section>
+  <section class="block" id="lista">${lista(f)}</section>
   ${legenda()}
   <div class="foot"><button class="btn" data-vista="metodo">Come calcoliamo l'eco</button><button class="btn" data-vista="segnala">Segnala un evento</button></div>`;
-  firmaElenco = attiviA(t).map((e) => e.id).join(",") + "|" + st.i;
 }
 function metodo(v: "metodo" | "segnala") {
   st.vista = v;
   const box = desktop() ? detail : body;
-  if (desktop()) { detail.hidden = false; $("#app").classList.add("with-detail"); requestAnimationFrame(() => { map.resize(); traccia(); }); } else panel.dataset.state = "half";
+  if (desktop()) { detail.hidden = false; $("#app").classList.add("with-detail"); requestAnimationFrame(() => { map.resize(); traccia(); }); } else { panel.dataset.state = "half"; panel.classList.add("evento"); }
   sgancia();
   box.innerHTML = v === "segnala"
-    ? `<div class="d"><div class="d-top"><button class="back" data-back>← Indietro</button><span class="test">Dati di prova</span></div><header class="d-head"><h2>Segnala un evento</h2><p>Nel sito reale: posa il segnaposto sul punto, scegli tipo, ora e l'effetto sul traffico. Niente foto e niente testo libero pubblico.</p></header><section class="card"><h3>Prima di inviare</h3><p class="plain">Ti mostriamo gli eventi già noti vicino a te: se il tuo è uno di questi, basta confermarlo. Le sole segnalazioni producono un'eco tratteggiata, distinta da quelle con fonti.</p></section></div>`
-    : `<div class="d"><div class="d-top"><button class="back" data-back>← Indietro</button><span class="test">Dati di prova</span></div><header class="d-head"><h2>Come calcoliamo l'eco</h2><p>Un evento diventa pubblico quando le fonti indipendenti superano la soglia di 0,80. L'eco sulla mappa è la gravità del tipo moltiplicata per la conferma delle fonti.</p></header>
+    ? `<div class="d"><div class="d-top"><button class="back" data-back>← Indietro</button></div><header class="d-head"><h2>Segnala un evento</h2><p>Nel sito reale: posa il segnaposto sul punto, scegli tipo, ora e l'effetto sul traffico. Niente foto e niente testo libero pubblico.</p></header><section class="card"><h3>Prima di inviare</h3><p class="plain">Ti mostriamo gli eventi già noti vicino a te: se il tuo è uno di questi, basta confermarlo. Le sole segnalazioni producono un'eco tratteggiata, distinta da quelle con fonti.</p></section></div>`
+    : `<div class="d"><div class="d-top"><button class="back" data-back>← Indietro</button></div><header class="d-head"><h2>Come calcoliamo l'eco</h2><p>Un evento diventa pubblico quando le fonti indipendenti superano la soglia di 0,80. L'eco sulla mappa è la gravità del tipo moltiplicata per la conferma delle fonti.</p></header>
       <section class="card"><h3>Gravità del tipo</h3><dl class="kv">${ORDINE_TIPI.map((k) => `<dt>${TIPI[k].label}</dt><dd class="fig">${TIPI[k].gravita.toFixed(2)}</dd>`).join("")}</dl></section>
       <section class="card"><h3>Peso delle fonti</h3><dl class="kv"><dt>Ente ufficiale</dt><dd class="fig">1.00</dd><dt>Agenzia di stampa</dt><dd class="fig">0.60</dd><dt>Testata</dt><dd class="fig">0.50</dd><dt>Promotori</dt><dd class="fig">0.30</dd><dt>Segnalazioni</dt><dd class="fig">fino a 0.60</dd><dt>Smentita</dt><dd class="fig">−0.60</dd></dl></section>
-      <section class="card"><h3>Previsione</h3><p class="plain">Dopo l'ora attuale l'animazione mostra solo eventi annunciati da fonti, in azzurro. Un evento in corso senza fine comunicata sfuma nelle 24 ore successive.</p></section></div>`;
+      <section class="card"><h3>Previsione</h3><p class="plain">Dopo l'ora attuale l'animazione avanza a blocchi di 6 ore e mostra solo eventi annunciati da fonti, in azzurro. Un evento in corso senza fine comunicata sfuma nelle 24 ore successive.</p></section></div>`;
 }
 body.addEventListener("click", (ev) => {
   const b = (ev.target as HTMLElement).closest("button") as HTMLElement | null;
@@ -474,9 +553,9 @@ function scheda(e: Evento) {
   const c = credibilita(e), pk = pacchetti(e), tot = pk.reduce((a, x) => a + x.w, 0), seg = 24, I = intensita(e), b = banda(I);
   const pieni = Math.round((Math.max(0, Math.min(Math.abs(tot), SCALA)) / SCALA) * seg);
   return `<div class="d">
-  <div class="d-top"><button class="back" data-back>← Tutti gli eventi</button><span class="test">Dati di prova</span></div>
-  <header class="d-head"><div class="d-sym">${simbolo(e.tipo, variante(e), 22)}<span class="fig">${e.id.toUpperCase()} · ${e.regione.toUpperCase()}</span></div><h2 class="dec">${titolo(e)}</h2><p>${e.luogo}</p>
-    <div class="pills"><span class="pill neutral">${STATI[e.stato]}</span><span class="pill ${c.cls}">${c.label}</span><span class="pill neutral">${e.categoria}</span></div></header>
+  <div class="d-top"><button class="back" data-back>← Tutti gli eventi</button></div>
+  <header class="d-head"><div class="d-sym">${simbolo(e.tipo, variante(e), 18)}<span class="fig">${e.regione.toUpperCase()} · ${e.categoria.toUpperCase()}</span></div><h2 class="dec">${titolo(e)}</h2><p>${e.luogo}</p>
+    <div class="pills"><span class="pill neutral">${STATI[e.stato]}</span><span class="pill ${c.cls}">${c.label}</span><span class="pill eco-pill">${barre(b.k)}Eco ${b.label}</span></div></header>
   ${e.contraddittorio ? `<p class="alert warn">Due fonti descrivono la situazione in modo incompatibile. L'evento resta visibile con questo avviso finché una fonte successiva non chiarisce.</p>` : ""}
   ${!e.fonti.length ? `<p class="alert user">Nessuna fonte giornalistica o ufficiale finora. È visibile perché ${e.segnalatori} segnalatori diversi lo hanno indicato nello stesso punto entro 2 ore; scompare dopo 6 ore senza nuove segnalazioni.</p>` : ""}
   <section class="card"><h3>Perché è visibile</h3>
@@ -490,46 +569,56 @@ function scheda(e: Evento) {
     <dt>Precisione</dt><dd>${e.precisione === "comune" ? "Solo il comune" : "Punto indicato dalle fonti"}</dd><dt>Traffico</dt><dd>${e.traffico}</dd>
     <dt>Aggiornato</dt><dd class="fig">${dataOra(e.aggiornato)} · ${fa(e.aggiornato)}</dd></dl></section>
   <section class="card"><h3>Cronologia</h3><ol class="tl">${e.cronologia.map(([w, k, t]) => `<li><span class="w fig">${dataOra(w)}</span><span><b>${k}.</b> ${t}</span></li>`).join("")}</ol></section>
-  <div class="acts">${e.stato !== "concluso" ? `<button class="btn primary" id="conf">Sono sul posto, confermo</button>` : ""}<button class="btn" id="err">Segnala un errore</button></div><div id="msg"></div></div>`;
+  <div class="acts">${e.stato !== "concluso" ? `<button class="btn primary" id="conf">Sono sul posto, confermo</button>` : ""}<button class="btn" id="err">Segnala un errore</button></div><div id="msg" aria-live="polite"></div></div>`;
 }
 function apri(id: string, daElenco: boolean) {
-  if (!scansionato) saltaScansione();
   st.sel = id; st.vista = "elenco";
   const e = EVENTI.find((x) => x.id === id)!;
   if (desktop()) { detail.hidden = false; $("#app").classList.add("with-detail"); detail.innerHTML = scheda(e); detail.scrollTop = 0; situazione(); }
-  else { body.innerHTML = scheda(e); body.scrollTop = 0; if (panel.dataset.state === "peek") panel.dataset.state = "half"; }
+  else { ferma(); body.innerHTML = scheda(e); body.scrollTop = 0; panel.classList.add("evento"); if (panel.dataset.state === "peek") panel.dataset.state = "half"; }
   const box = desktop() ? detail : body;
-  const h = box.querySelector(".dec"); if (h) decodifica(h, h.textContent || "", 260);
+  const h = box.querySelector(".dec"); if (h) decodifica(h, h.textContent || "");
   box.querySelector("#err")?.addEventListener("click", () => ((box.querySelector("#msg") as HTMLElement).innerHTML = `<p class="msg">Nel sito reale l'evento verrebbe nascosto in via cautelativa e verificato entro 48 ore. Qui non viene inviato nulla.</p>`));
   box.querySelector("#conf")?.addEventListener("click", () => ((box.querySelector("#msg") as HTMLElement).innerHTML = `<p class="msg">Nel sito reale la conferma conterebbe come segnalazione. Qui non viene inviato nulla.</p>`));
-  aggiornaMappa();
+  ricarica();
   requestAnimationFrame(() => {
     map.resize(); traccia();
-    const pad = desktop() ? { left: 60, top: 80, right: 60, bottom: 60 } : { top: 70, bottom: window.innerHeight * 0.55, left: 30, right: 30 };
-    map.flyTo({ center: e.lngLat, zoom: Math.max(map.getZoom(), e.precisione === "comune" ? 10.5 : 12.5), pitch: desktop() ? 40 : 30, padding: pad, duration: calmo() ? 0 : daElenco ? 1200 : 700, essential: true });
+    const pad = desktop() ? { left: 60, top: 90, right: 60, bottom: 60 } : { top: 110, bottom: window.innerHeight * 0.58, left: 30, right: 30 };
     aggancia(e);
+    map.flyTo({ center: e.lngLat, zoom: e.precisione === "comune" ? 10 : 11, pitch: desktop() ? 35 : 25, padding: pad, duration: calmo() ? 0 : MOTO.fly, curve: 1.3, essential: true });
+    // l'etichetta si decodifica quando la camera è arrivata
+    if (!calmo()) setTimeout(() => preso === e && etichetta(e), MOTO.fly);
+    else etichetta(e);
   });
+  void daElenco;
 }
 function chiudi() {
   st.sel = null; sgancia();
   detail.hidden = true; $("#app").classList.remove("with-detail");
-  situazione(); aggiornaMappa();
+  situazione(); ricarica();
+  if (!desktop()) panel.dataset.state = "peek";
   requestAnimationFrame(() => { map.resize(); traccia(); });
 }
 
-// ---------- aggancio: angoli che si stringono, eco che pulsa una volta, testo che si decodifica ----------
+// ---------- aggancio: angoli che si stringono (200 ms), impulso, poi l'etichetta si decodifica ----------
 const lock = $("#lock"), tag = $("#lock-tag");
 let preso: Evento | null = null;
 function aggancia(e: Evento) {
   preso = e; lock.hidden = false; lock.classList.remove("on"); void lock.offsetWidth;
-  requestAnimationFrame(() => lock.classList.add("on"));
-  decodifica(tag, `${TIPI[e.tipo].label} · ${e.comune} · eco ${banda(intensita(e)).label}`.toUpperCase(), 240); segui();
+  lock.classList.add("on");
+  tag.innerHTML = `${radar(12)}<span>AGGANCIO</span>`; tag.classList.add("wait"); occupato(true);
+  segui();
 }
-function sgancia() { preso = null; lock.hidden = true; }
+function etichetta(e: Evento) {
+  tag.classList.remove("wait"); occupato(false);
+  tag.innerHTML = "<span></span>";
+  decodifica(tag.firstElementChild!, `${TIPI[e.tipo].label} · ${e.comune} · eco ${banda(intensita(e)).label}`.toUpperCase());
+}
+function sgancia() { if (preso && tag.classList.contains("wait")) occupato(false); preso = null; lock.hidden = true; tag.classList.remove("wait"); }
 function segui() {
   if (!preso) return;
   const p = map.project(preso.lngLat), box = $("#mapbox").getBoundingClientRect();
-  lock.style.transform = `translate(${p.x}px, ${p.y}px)`; lock.classList.toggle("flip", p.x > box.width - 240);
+  lock.style.transform = `translate(${p.x}px, ${p.y}px)`; lock.classList.toggle("flip", p.x > box.width - 250);
 }
 map.on("move", segui);
 
@@ -543,14 +632,13 @@ addEventListener("resize", () => {
   collocaLoop(); traccia(); segui();
   if (eraDesk !== desktop()) { eraDesk = desktop(); if (st.sel) apri(st.sel, false); else situazione(); }
 });
-function aggiorna() { aggiornaMappa(); situazione(); traccia(); }
+function aggiorna() { ricarica(); situazione(); traccia(); }
 
 collocaLoop();
 situazione();
 orologio();
 requestAnimationFrame(traccia);
-scrub.setAttribute("aria-valuetext", dataOra(tempo()));
-if (calmo()) { scansionato = true; for (const e of EVENTI) rivelato[e.id] = 1; }
+scrub.setAttribute("aria-valuetext", etichettaFoto(foto()));
 
 // pannello trascinabile su telefono
 const fasi = ["peek", "half", "full"] as const;
@@ -566,4 +654,5 @@ grip.addEventListener("pointerup", (ev) => {
 panel.addEventListener("transitionend", segui);
 
 // controlli di coerenza dei dati di prova
-console.assert(FOTO[I_ORA] === +ORA, "il fotogramma 'ora' deve coincidere con ORA");
+console.assert(FOTO[I_ORA].b === +ORA, "il fotogramma 'ora' deve finire a ORA");
+console.assert(FOTO[N - 1].b === +ORA + 8 * 864e5, "la previsione copre 8 giorni");
