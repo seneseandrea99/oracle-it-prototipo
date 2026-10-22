@@ -244,18 +244,18 @@ function satellite(style: any) {
   style.sources["dem-rilievo"] = demSenzaCrediti;
   style.layers = [
     { id: "spazio", type: "background", paint: { "background-color": "#0a0805" } },
-    { id: "satellite", type: "raster", source: "satellite", paint: { "raster-brightness-max": 0.9, "raster-brightness-min": 0.08, "raster-saturation": -0.3, "raster-contrast": 0.04, "raster-fade-duration": 200 } },
+    { id: "satellite", type: "raster", source: "satellite", paint: { "raster-brightness-max": 1, "raster-brightness-min": 0.12, "raster-saturation": -0.18, "raster-contrast": 0.02, "raster-fade-duration": 200 } },
     // luce radente da nord-ovest: ombre profonde ma trasparenti, luci appena ambrate
     { id: "rilievo", type: "hillshade", source: "dem-ombre", paint: {
       "hillshade-illumination-direction": 315, "hillshade-illumination-anchor": "map",
       "hillshade-exaggeration": ["interpolate", ["linear"], ["zoom"], 4, 0.65, 9, 0.5, 13, 0.35],
-      "hillshade-shadow-color": "rgba(10,6,2,0.28)", "hillshade-highlight-color": "rgba(255,226,170,0.3)", "hillshade-accent-color": "rgba(40,26,8,0.22)",
+      "hillshade-shadow-color": "rgba(10,6,2,0.2)", "hillshade-highlight-color": "rgba(255,226,170,0.3)", "hillshade-accent-color": "rgba(40,26,8,0.22)",
     } },
     ...tenute,
   ];
   // il 3D si accende da zoom 7 (vedi rilievo3D): a bassa quota sul globo non serve e MapLibre 5.24 lo segnala
   style.projection = { type: "globe" };
-  style.sky = { "sky-color": "#0c0804", "horizon-color": "#3a2810", "fog-color": "#2a2216", "sky-horizon-blend": 0.55, "horizon-fog-blend": 0.4, "fog-ground-blend": 0.12,
+  style.sky = { "sky-color": "#0c0804", "horizon-color": "#3a2810", "fog-color": "#3a3020", "sky-horizon-blend": 0.55, "horizon-fog-blend": 0.4, "fog-ground-blend": 0.12,
     "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 0, 1, 5, 1, 8, 0] };
   return style;
 }
