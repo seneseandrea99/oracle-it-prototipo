@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>ORACLE IT · Telescrivente</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#070b12">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css">
+  <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+</head>
+<body>
+  <div class="app" id="app">
+    <main class="globo" aria-label="Mappa">
+      <div id="map" aria-label="Globo satellitare con gli eventi in Italia"></div>
+      <div class="velo" aria-hidden="true"></div>
+      <div class="lock" id="lock" hidden aria-hidden="true"><i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i><span class="lock-tag" id="lock-tag"></span></div>
+      <div class="maperr" id="maperr" hidden>La mappa non si è caricata. Il notiziario qui accanto resta completo.</div>
+      <section class="nastro" id="nastro" aria-label="Linea del tempo: ultime 24 ore e prossimi 8 giorni"></section>
+    </main>
+
+    <header class="testata">
+        <div class="testata-r1">
+          <a class="marchio" href="#" aria-label="ORACLE IT">
+            <svg viewBox="0 0 28 28" width="24" height="24" aria-hidden="true"><rect x="3" y="5" width="22" height="4" /><rect x="3" y="12" width="15" height="4" /><rect x="3" y="19" width="9" height="4" /><path d="M21 15.5v8M17 19.5h8" /></svg>
+            <span>ORACLE<b>IT</b></span>
+          </a>
+          <span class="prova" title="Tutti gli eventi, i luoghi delle notizie e le fonti sono inventati">Dati di prova</span>
+          <span class="orologio fig" id="orologio">22/10 · 20:00</span>
+        </div>
+    </header>
+
+    <aside class="filo" id="filo" data-state="peek" aria-label="Telescrivente">
+      <button class="grip" id="grip" aria-label="Espandi o riduci il notiziario"><span></span></button>
+      <div class="corpo" id="corpo"></div>
+    </aside>
+  </div>
+  <svg class="leader" id="leader" aria-hidden="true"><polyline id="leader-line" points="" /><circle id="leader-a" r="0" /><circle id="leader-b" r="0" /></svg>
+  <div class="avvio" id="avvio" aria-hidden="true"><span class="avvio-riga" id="avvio-riga"></span><span class="avvio-barra"></span></div>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

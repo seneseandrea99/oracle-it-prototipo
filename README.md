@@ -5,3 +5,9 @@ Prototipo **usa e getta** dell'interfaccia di [ORACLE IT](https://github.com/sen
 - Mappa: MapLibre GL con tile OpenFreeMap (© OpenStreetMap contributors).
 - Avvio locale: `npm install && npm run dev`.
 - Pubblicazione: a ogni push su `main` la GitHub Action costruisce il sito e lo pubblica sul branch `gh-pages` (GitHub Pages).
+
+## Varianti
+- Principale: `./`
+- Telescrivente (team A): `./varianti/telescrivente/`
+- Radar (team B): `./varianti/radar/`
+- Dossier (team C): `./varianti/dossier/`

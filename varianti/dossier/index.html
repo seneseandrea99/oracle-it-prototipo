@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>ORACLE IT · Dossier</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#f2f1ed">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css">
+  <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="mast">
+      <a class="brand" href="#" aria-label="ORACLE IT, torna alla vista d'insieme" id="brand">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M3 7V3h4M17 3h4v4M21 17v4h-4M7 21H3v-4" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/></svg>
+        <span>ORACLE IT</span>
+      </a>
+      <span class="mast-when"><span class="fig">22.10<span class="y">.2026</span> · 20:00</span><span class="mast-sub"> · Briefing sulla situazione in Italia</span></span>
+      <span class="stamp" title="Tutti gli eventi e le fonti di questa pagina sono inventati">Dati di prova</span>
+      <nav class="mast-nav" aria-label="Sezioni">
+        <button data-vista="metodo">Metodo</button>
+        <button data-vista="segnala">Segnala</button>
+      </nav>
+    </header>
+
+    <aside class="brief" id="brief" data-state="peek" aria-label="Briefing">
+      <button class="grip" id="grip" aria-label="Espandi o riduci il briefing"><span></span></button>
+      <div class="brief-body" id="brief-body"></div>
+    </aside>
+
+    <main class="stage">
+      <figure class="plate" id="plate">
+        <div id="map" aria-label="Globo satellitare con gli eventi in Italia"></div>
+        <svg class="ann-lines" id="ann-lines" aria-hidden="true"></svg>
+        <div class="ann" id="ann"></div>
+        <div class="lock" id="lock" hidden aria-hidden="true"><i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i></div>
+        <div class="readout fig" id="readout" aria-hidden="true"></div>
+        <div class="maperr" id="maperr" hidden>Le immagini non si sono caricate. Controlla la connessione e ricarica la pagina.</div>
+      </figure>
+      <div class="caption">
+        <div class="key" aria-label="Legenda">
+          <span><svg viewBox="-10 -10 20 20" width="14" height="14" aria-hidden="true"><rect x="-6" y="-6" width="12" height="12" class="k-shape"/></svg>Blocco</span>
+          <span><svg viewBox="-10 -10 20 20" width="14" height="14" aria-hidden="true"><circle r="6.4" class="k-shape"/></svg>Presidio</span>
+          <span><svg viewBox="-10 -10 20 20" width="14" height="14" aria-hidden="true"><polygon points="0,-7.5 7,6 -7,6" class="k-shape"/></svg>Corteo</span>
+          <span><svg viewBox="-10 -10 20 20" width="14" height="14" aria-hidden="true"><polygon points="0,-8 8,0 0,8 -8,0" class="k-shape"/></svg>Sciopero</span>
+          <span class="key-sep"><svg viewBox="-10 -10 20 20" width="14" height="14" aria-hidden="true"><circle r="6.4" class="k-on"/></svg>In corso</span>
+          <span><svg viewBox="-10 -10 20 20" width="14" height="14" aria-hidden="true"><circle r="6.4" class="k-off"/></svg>Annunciato</span>
+          <span><svg viewBox="-10 -10 20 20" width="14" height="14" aria-hidden="true"><circle r="6.4" class="k-user"/></svg>Solo segnalazioni</span>
+          <span><svg viewBox="-10 -10 20 20" width="14" height="14" aria-hidden="true"><circle r="5" class="k-end"/></svg>Concluso</span>
+        </div>
+        <p class="credit">Immagini Sentinel-2 cloudless, EOX (dati Copernicus 2020) · strade e nomi © OpenStreetMap</p>
+      </div>
+      <section class="strip" aria-label="Linea del tempo">
+        <div class="strip-head"><h2>Ultime 24 ore e prossimi 8 giorni</h2><span class="note">Seleziona un segno per aprire l'evento</span></div>
+        <div class="strip-svg" id="strip-desk"></div>
+      </section>
+    </main>
+
+    <section class="detail" id="detail" hidden aria-label="Scheda evento"></section>
+  </div>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>
