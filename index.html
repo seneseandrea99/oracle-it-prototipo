@@ -5,25 +5,32 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>ORACLE IT · prototipo</title>
   <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#040607">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Atkinson+Hyperlegible:wght@400;700&family=Martian+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css">
   <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
 </head>
 <body>
-  <div id="map" aria-label="Mappa degli eventi"></div>
+  <div id="map" aria-label="Mappa degli eventi in Italia"></div>
+  <div class="scan" aria-hidden="true"></div>
+  <svg class="leader" id="leader" aria-hidden="true"><polyline id="leader-line" points=""/><circle id="leader-dot" r="3"/></svg>
+  <div class="lock" id="lock" hidden aria-hidden="true">
+    <i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i>
+    <span class="lock-tag" id="lock-tag"></span>
+  </div>
 
-  <header class="hud">
-    <div class="hud-row">
-      <div class="brand"><b>ORACLE IT</b><span class="fake">Dati fittizi · prototipo</span></div>
+  <header class="strip">
+    <div class="strip-row">
+      <div class="brand"><b>ORACLE<span>IT</span></b><span class="tag">Dati sintetici</span></div>
       <div class="counters" id="counters" aria-live="polite"></div>
     </div>
-    <div class="chips" id="chips" role="toolbar" aria-label="Filtri"></div>
+    <div class="filters" id="filters" role="toolbar" aria-label="Filtri"></div>
   </header>
 
-  <section class="sheet" id="sheet" data-state="peek" aria-label="Elenco eventi">
+  <section class="panel" id="panel" data-state="peek" aria-label="Eventi">
     <button class="grip" id="grip" aria-label="Espandi o riduci il pannello"><span></span></button>
-    <div class="sheet-body" id="sheet-body"></div>
+    <div class="panel-body" id="panel-body"></div>
   </section>
 
   <div class="maperr" id="maperr" hidden>La mappa non si è caricata. Controlla la connessione e ricarica la pagina.</div>
