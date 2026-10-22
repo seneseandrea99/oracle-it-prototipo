@@ -5,35 +5,46 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>ORACLE IT · prototipo</title>
   <meta name="robots" content="noindex">
-  <meta name="theme-color" content="#040607">
+  <meta name="theme-color" content="#0c0c0e">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Atkinson+Hyperlegible:wght@400;700&family=Martian+Mono:wght@400;500&display=swap">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Public+Sans:wght@400;500;600;700&family=Martian+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css">
   <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
 </head>
 <body>
-  <div id="map" aria-label="Mappa degli eventi in Italia"></div>
-  <div class="scan" aria-hidden="true"></div>
-  <svg class="leader" id="leader" aria-hidden="true"><polyline id="leader-line" points=""/><circle id="leader-dot" r="3"/></svg>
-  <div class="lock" id="lock" hidden aria-hidden="true">
-    <i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i>
-    <span class="lock-tag" id="lock-tag"></span>
+  <div class="app" id="app">
+    <nav class="rail" aria-label="Navigazione">
+      <a class="mark" href="#" aria-label="ORACLE IT">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 1v5M12 18v5M1 12h5M18 12h5" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/></svg>
+      </a>
+      <button class="nav" data-vista="mappa" aria-current="true" title="Mappa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z M9 4v14 M15 6v14"/></svg><span>Mappa</span></button>
+      <button class="nav" data-vista="elenco" aria-current="false" title="Elenco"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg><span>Elenco</span></button>
+      <button class="nav" data-vista="segnala" aria-current="false" title="Segnala"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z M12 7v5 M9.5 9.5h5"/></svg><span>Segnala</span></button>
+      <button class="nav" data-vista="metodo" aria-current="false" title="Metodo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z M8.5 12l2.5 2.5 4.5-5"/></svg><span>Metodo</span></button>
+    </nav>
+
+    <aside class="side" id="side" data-state="peek" aria-label="Situazione">
+      <button class="grip" id="grip" aria-label="Espandi o riduci il pannello"><span></span></button>
+      <div class="side-body" id="side-body"></div>
+    </aside>
+
+    <main class="stage">
+      <div class="mapbox">
+        <div id="map" aria-label="Mappa degli eventi in Italia"></div>
+        
+        <div class="lock" id="lock" hidden aria-hidden="true"><i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i><span class="lock-tag" id="lock-tag"></span></div>
+        <div class="maperr" id="maperr" hidden>La mappa non si è caricata. Controlla la connessione e ricarica la pagina.</div>
+      </div>
+      <section class="strip" aria-label="Linea del tempo">
+        <div class="strip-head"><h2>Ultime 24 ore e prossimi 8 giorni</h2><span class="note">Tocca un segno per aprire l'evento</span></div>
+        <div class="strip-svg" id="strip-desk"></div>
+      </section>
+    </main>
+
+    <section class="detail" id="detail" hidden aria-label="Scheda evento"></section>
   </div>
-
-  <header class="strip">
-    <div class="strip-row">
-      <div class="brand"><b>ORACLE<span>IT</span></b><span class="tag">Dati sintetici</span></div>
-      <div class="counters" id="counters" aria-live="polite"></div>
-    </div>
-    <div class="filters" id="filters" role="toolbar" aria-label="Filtri"></div>
-  </header>
-
-  <section class="panel" id="panel" data-state="peek" aria-label="Eventi">
-    <button class="grip" id="grip" aria-label="Espandi o riduci il pannello"><span></span></button>
-    <div class="panel-body" id="panel-body"></div>
-  </section>
-
-  <div class="maperr" id="maperr" hidden>La mappa non si è caricata. Controlla la connessione e ricarica la pagina.</div>
+  <svg class="leader" id="leader" aria-hidden="true"><polyline id="leader-line" points=""/><circle id="leader-dot" r="0"/></svg>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
