@@ -244,7 +244,7 @@ function satellite(style: any) {
   style.sources["dem-rilievo"] = demSenzaCrediti;
   style.layers = [
     { id: "spazio", type: "background", paint: { "background-color": "#0a0805" } },
-    { id: "satellite", type: "raster", source: "satellite", paint: { "raster-brightness-max": 0.84, "raster-brightness-min": 0.07, "raster-saturation": -0.26, "raster-contrast": 0.04, "raster-fade-duration": 200 } },
+    { id: "satellite", type: "raster", source: "satellite", paint: { "raster-brightness-max": 0.7, "raster-brightness-min": 0.07, "raster-saturation": -0.25, "raster-contrast": 0.04, "raster-fade-duration": 200 } },
     // luce radente da nord-ovest: ombre profonde ma trasparenti, luci appena ambrate
     { id: "rilievo", type: "hillshade", source: "dem-ombre", paint: {
       "hillshade-illumination-direction": 315, "hillshade-illumination-anchor": "map",
