@@ -3,51 +3,82 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>ORACLE IT · prototipo</title>
+  <title>ORACLE IT · Radar</title>
   <meta name="robots" content="noindex">
-  <meta name="theme-color" content="#0c0c0e">
+  <meta name="theme-color" content="#060a0c">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=Martian+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css">
   <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
-  <script type="module" crossorigin src="./assets/main-BkhUnY0M.js"></script>
+  <script type="module" crossorigin src="./assets/main-CYFyNOiy.js"></script>
   <link rel="modulepreload" crossorigin href="./assets/data-DHoYd5B0.js">
-  <link rel="stylesheet" crossorigin href="./assets/main-BjIw_jb7.css">
+  <link rel="stylesheet" crossorigin href="./assets/main-BHxydZ0-.css">
 </head>
 <body>
   <div class="app" id="app">
     <nav class="rail" aria-label="Navigazione">
-      <a class="mark" href="#" aria-label="ORACLE IT">
-        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 1v5M12 18v5M1 12h5M18 12h5" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/></svg>
-      </a>
-      <button class="nav" data-vista="mappa" aria-current="true" title="Mappa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z M9 4v14 M15 6v14"/></svg><span>Mappa</span></button>
-      <button class="nav" data-vista="elenco" aria-current="false" title="Elenco"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg><span>Elenco</span></button>
-      <button class="nav" data-vista="segnala" aria-current="false" title="Segnala"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z M12 7v5 M9.5 9.5h5"/></svg><span>Segnala</span></button>
-      <button class="nav" data-vista="metodo" aria-current="false" title="Metodo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z M8.5 12l2.5 2.5 4.5-5"/></svg><span>Metodo</span></button>
+      <a class="rail-mark" href="#" aria-label="ORACLE IT" id="rail-mark"></a>
+      <button class="nav" data-vista="mappa" aria-current="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z M9 4v14 M15 6v14"/></svg><span>Mappa</span></button>
+      <button class="nav" data-vista="elenco" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg><span>Elenco</span></button>
+      <button class="nav" data-vista="segnala" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z M12 7v5 M9.5 9.5h5"/></svg><span>Segnala</span></button>
+      <button class="nav" data-vista="metodo" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z M8.5 12l2.5 2.5 4.5-5"/></svg><span>Metodo</span></button>
     </nav>
-
-    <aside class="side" id="side" data-state="peek" aria-label="Situazione">
+    <aside class="panel" id="panel" data-state="peek" aria-label="Situazione">
       <button class="grip" id="grip" aria-label="Espandi o riduci il pannello"><span></span></button>
-      <div class="side-body" id="side-body"></div>
+      <header class="panel-head title">
+        <div class="title-row"><h1><span class="mark" id="title-mark"></span>ORACLE IT</h1><span class="test">Dati di prova</span></div>
+        <p class="sub">Radar delle mobilitazioni in Italia. Eventi e fonti di questa pagina sono inventati.</p>
+        <div id="cerca-slot-desk"></div>
+      </header>
+      <div class="panel-loop" id="loop-slot-mob"></div>
+      <div class="panel-body" id="panel-body"></div>
     </aside>
 
     <main class="stage">
-      <div class="mapbox">
-        <div id="map" aria-label="Mappa degli eventi in Italia"></div>
-        <div class="datepill" aria-label="Situazione al 22 ottobre 2026, ore 20:00"><i></i>22 ottobre 2026 · 20:00</div>
-        
-        <div class="lock" id="lock" hidden aria-hidden="true"><i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i><span class="lock-tag" id="lock-tag"></span></div>
-        <div class="maperr" id="maperr" hidden>La mappa non si è caricata. Controlla la connessione e ricarica la pagina.</div>
+      <div class="mapbox" id="mapbox">
+        <div id="map" aria-label="Mappa radar degli eventi in Italia"></div>
+        <div class="gradi" id="gradi" aria-hidden="true"></div>
+        <canvas class="sweep" id="sweep-anelli" aria-hidden="true"></canvas>
+        <canvas class="sweep" id="sweep" aria-hidden="true"></canvas>
+        <div class="loader" id="loader" role="status" aria-label="Caricamento della mappa"><span class="loader-txt fig" id="loader-txt"></span></div>
+        <div class="hud">
+          <div class="hud-top"><div class="hud-brand"><span class="mark" id="hud-mark"></span><b>ORACLE IT</b><span class="test">Dati di prova</span></div>
+            <button class="hud-cerca" id="cerca-apri" aria-label="Cerca un comune" aria-expanded="false" aria-controls="cerca-slot-mob"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg></button></div>
+          <div class="hud-time" id="hud-time"></div>
+        </div>
+        <div class="cerca-mob" id="cerca-slot-mob" hidden></div>
+        <div class="toast" id="toast" role="status" aria-live="polite"></div>
+        <div class="lock" id="lock" hidden aria-hidden="true"><i class="ping"></i><i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i><span class="lock-tag" id="lock-tag"></span></div>
+        <div class="maperr" id="maperr" role="alert" hidden></div>
       </div>
-      <section class="strip" aria-label="Linea del tempo">
-        <div class="strip-head"><h2>Ultime 24 ore e prossimi 8 giorni</h2><span class="note">Tocca un segno per aprire l'evento</span></div>
-        <div class="strip-svg" id="strip-desk"></div>
-      </section>
+      <div class="stage-loop" id="loop-slot-desk">
+        <section class="loop" id="loop" aria-label="Animazione nel tempo: ultime 24 ore ora per ora, prossimi 8 giorni a blocchi di 6 ore">
+          <button class="play" id="play" aria-label="Avvia l'animazione" aria-pressed="false">
+            <svg class="i-play" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 4.5v11l9-5.5z"/></svg>
+            <svg class="i-pause" viewBox="0 0 20 20" aria-hidden="true"><path d="M5.5 4.5h3v11h-3zM11.5 4.5h3v11h-3z"/></svg>
+          </button>
+          <div class="loop-main">
+            <div class="loop-head"><span class="loop-time fig" id="loop-time"></span><span class="loop-mode" id="loop-mode"></span><button class="now" id="now" hidden>Torna a ora</button></div>
+            <div class="track" id="track">
+              <div class="track-svg" id="track-svg"></div>
+              <span class="thumb" id="thumb" aria-hidden="true"><i></i></span>
+              <input type="range" id="scrub" min="0" max="56" step="1" value="24" aria-label="Momento mostrato sulla mappa">
+            </div>
+          </div>
+        </section>
+      </div>
     </main>
 
     <section class="detail" id="detail" hidden aria-label="Scheda evento"></section>
   </div>
-  <svg class="leader" id="leader" aria-hidden="true"><polyline id="leader-line" points=""/><circle id="leader-dot" r="0"/></svg>
+  <div class="cerca" id="cerca" role="search">
+    <div class="cerca-box">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg>
+      <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Cerca un comune" aria-label="Cerca un comune" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="q-list">
+      <button class="cerca-x" id="q-x" aria-label="Chiudi la ricerca" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <ul class="cerca-list" id="q-list" role="listbox" aria-label="Comuni trovati" hidden></ul>
+  </div>
 </body>
 </html>
