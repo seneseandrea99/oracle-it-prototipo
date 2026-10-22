@@ -165,9 +165,9 @@ function tracciato(ctx: CanvasRenderingContext2D, f: string, c: number, r: numbe
 }
 function icona(tipo: Tipo, v: string, px = 56) {
   const cv = document.createElement("canvas"); cv.width = cv.height = px;
-  const ctx = cv.getContext("2d")!, c = px / 2, r = px * 0.25, ink = v === "concluso" ? "#8a9799" : "#f1fbf8";
-  tracciato(ctx, TIPI[tipo].forma, c, r); ctx.lineWidth = px * 0.16; ctx.strokeStyle = "rgba(4,8,10,.75)"; ctx.lineJoin = "round"; ctx.stroke();
-  tracciato(ctx, TIPI[tipo].forma, c, r); ctx.fillStyle = "rgba(4,8,10,.7)"; ctx.fill();
+  const ctx = cv.getContext("2d")!, c = px / 2, r = px * 0.25, ink = v === "concluso" ? "#9a8f7e" : "#fbf4e8";
+  tracciato(ctx, TIPI[tipo].forma, c, r); ctx.lineWidth = px * 0.16; ctx.strokeStyle = "rgba(8,6,3,.75)"; ctx.lineJoin = "round"; ctx.stroke();
+  tracciato(ctx, TIPI[tipo].forma, c, r); ctx.fillStyle = "rgba(8,6,3,.7)"; ctx.fill();
   if (v === "pieno" || v === "concluso") { ctx.fillStyle = ink; ctx.fill(); }
   if (v === "discorde") { ctx.save(); ctx.beginPath(); ctx.rect(0, 0, c, px); ctx.clip(); tracciato(ctx, TIPI[tipo].forma, c, r); ctx.fillStyle = ink; ctx.fill(); ctx.restore(); }
   tracciato(ctx, TIPI[tipo].forma, c, r); ctx.lineWidth = px * 0.06; ctx.strokeStyle = ink;
@@ -194,6 +194,7 @@ $("#hud-mark").innerHTML = radar(20, "brand");
 occupato(true);
 
 // ---------- mappa: globo satellitare notturno ----------
+const TERRENO = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
 const SATELLITE = {
   eox: { tiles: ["https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg"], maxzoom: 15,
     attribution: '<a href="https://s2maps.eu" target="_blank" rel="noopener">Sentinel-2 cloudless by EOX IT Services GmbH</a> (dati Copernicus Sentinel 2020)' },
@@ -213,7 +214,7 @@ function erroreMappa(msg: string) {
 const senzaMappa = typeof maplibregl === "undefined";
 const noop: any = new Proxy(function () {}, { get: (_t, k) => (k === "project" ? () => ({ x: -999, y: -999 }) : noop), apply: () => noop });
 const map: any = senzaMappa ? noop : new maplibregl.Map({
-  container: "map", style: { version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#04070a" } }] },
+  container: "map", style: { version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#0a0805" } }] },
   bounds: ITALIA, fitBoundsOptions: { padding: padMappa() }, minZoom: 1.6, maxZoom: 17.5, maxPitch: 60,
   attributionControl: { compact: true }, dragRotate: false,
 });
@@ -224,25 +225,37 @@ else {
 }
 
 function satellite(style: any) {
-  const strade = ["match", ["get", "class"], ["motorway"], "rgba(220,240,236,.38)", ["trunk", "primary"], "rgba(220,240,236,.22)", "rgba(220,240,236,.1)"];
+  const strade = ["match", ["get", "class"], ["motorway"], "rgba(255,236,200,.38)", ["trunk", "primary"], "rgba(255,236,200,.22)", "rgba(255,236,200,.1)"];
   const tenute = style.layers.filter((l: any) => {
     const id = String(l.id), sl = String(l["source-layer"] || "");
     if (l.type === "line" && sl === "transportation") { l.paint = { ...(l.paint || {}), "line-color": strade }; delete l.paint["line-gradient"]; delete l.paint["line-dasharray"]; return !/casing|tunnel|rail|path|ferry/.test(id); }
-    if (l.type === "line" && sl === "boundary") { l.paint = { ...(l.paint || {}), "line-color": "rgba(220,240,236,.4)" }; return true; }
+    if (l.type === "line" && sl === "boundary") { l.paint = { ...(l.paint || {}), "line-color": "rgba(255,236,200,.4)" }; return true; }
     if (l.type === "symbol" && /place|city|town|capital|state|country/.test(id)) {
-      l.paint = { ...(l.paint || {}), "text-color": "#d9e6e3", "text-halo-color": "rgba(2,6,8,.9)", "text-halo-width": 1.4, "icon-opacity": 0 };
+      l.paint = { ...(l.paint || {}), "text-color": "#efe4d0", "text-halo-color": "rgba(6,4,2,.9)", "text-halo-width": 1.4, "icon-opacity": 0 };
       return true;
     }
     return false;
   });
   style.sources.satellite = { type: "raster", tileSize: 256, ...SATELLITE.eox };
+  // rilievo: due sorgenti dagli stessi dati aperti (consigliato da MapLibre: una per l'ombreggiatura, una per il 3D)
+  const dem = { type: "raster-dem", tiles: [TERRENO], tileSize: 256, maxzoom: 15, encoding: "terrarium", attribution: "Terrain: Mapzen / AWS Open Data, SRTM, GMTED" };
+  style.sources["dem-ombre"] = { ...dem };
+  const { attribution: _a, ...demSenzaCrediti } = dem; void _a;
+  style.sources["dem-rilievo"] = demSenzaCrediti;
   style.layers = [
-    { id: "spazio", type: "background", paint: { "background-color": "#04070a" } },
-    { id: "satellite", type: "raster", source: "satellite", paint: { "raster-brightness-max": 0.42, "raster-saturation": -0.82, "raster-contrast": 0.12, "raster-fade-duration": 200 } },
+    { id: "spazio", type: "background", paint: { "background-color": "#0a0805" } },
+    { id: "satellite", type: "raster", source: "satellite", paint: { "raster-brightness-max": 0.4, "raster-saturation": -0.85, "raster-contrast": 0.14, "raster-fade-duration": 200 } },
+    // luce radente da nord-ovest: ombre profonde ma trasparenti, luci appena ambrate
+    { id: "rilievo", type: "hillshade", source: "dem-ombre", paint: {
+      "hillshade-illumination-direction": 315, "hillshade-illumination-anchor": "map",
+      "hillshade-exaggeration": ["interpolate", ["linear"], ["zoom"], 4, 0.65, 9, 0.5, 13, 0.35],
+      "hillshade-shadow-color": "rgba(4,2,0,0.72)", "hillshade-highlight-color": "rgba(255,214,150,0.16)", "hillshade-accent-color": "rgba(36,22,6,0.45)",
+    } },
     ...tenute,
   ];
+  style.terrain = { source: "dem-rilievo", exaggeration: 1.4 };
   style.projection = { type: "globe" };
-  style.sky = { "sky-color": "#04121a", "horizon-color": "#1d4d55", "fog-color": "#04070a", "sky-horizon-blend": 0.55, "horizon-fog-blend": 0.5, "fog-ground-blend": 0.4,
+  style.sky = { "sky-color": "#0c0804", "horizon-color": "#3a2810", "fog-color": "#0a0805", "sky-horizon-blend": 0.55, "horizon-fog-blend": 0.5, "fog-ground-blend": 0.4,
     "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 0, 1, 5, 1, 8, 0] };
   return style;
 }
@@ -264,6 +277,56 @@ if (!senzaMappa) {
 }
 const regioniPronte = fetch("../../regioni.json").then((r) => r.json()).catch(() => null);
 
+// ---------- reticolo di meridiani e paralleli: 1° sull'Italia, 10° sul globo ----------
+function reticolo() {
+  const f: any[] = [], linea = (c: [number, number][], passo: number) => f.push({ type: "Feature", properties: { passo }, geometry: { type: "LineString", coordinates: c } });
+  for (let lon = 2; lon <= 24; lon++) { const c: [number, number][] = []; for (let lat = 33; lat <= 50; lat += 0.5) c.push([lon, lat]); linea(c, 1); }
+  for (let lat = 33; lat <= 50; lat++) { const c: [number, number][] = []; for (let lon = 2; lon <= 24; lon += 0.5) c.push([lon, lat]); linea(c, 1); }
+  for (let lon = -180; lon < 180; lon += 10) { const c: [number, number][] = []; for (let lat = -80; lat <= 80; lat += 2) c.push([lon, lat]); linea(c, 10); }
+  for (let lat = -80; lat <= 80; lat += 10) { const c: [number, number][] = []; for (let lon = -180; lon <= 180; lon += 2) c.push([lon, lat]); linea(c, 10); }
+  return { type: "FeatureCollection", features: f };
+}
+// etichette dei gradi lungo i bordi: in basso i meridiani, a destra i paralleli; mai sopra i dati
+let gradiRaf = 0;
+function etichetteGradi() {
+  if (gradiRaf) return;
+  gradiRaf = requestAnimationFrame(() => {
+    gradiRaf = 0;
+    const el = $("#gradi"), box = $("#mapbox"), w = box.clientWidth, h = box.clientHeight;
+    if (senzaMappa || !pronta) { el.innerHTML = ""; return; }
+    const z = map.getZoom(), passo = z >= 5 ? 1 : 10;
+    const basso = desktop() ? h - 8 : h - 244, destra = w - 8;
+    let html = "";
+    try {
+      const sx = map.unproject([0, basso]), dx = map.unproject([w, basso]);
+      const usati: number[] = [];
+      for (let lon = Math.ceil(Math.min(sx.lng, dx.lng) / passo) * passo; lon <= Math.max(sx.lng, dx.lng); lon += passo) {
+        const lat = map.unproject([w / 2, basso]).lat, p = map.project([lon, lat]);
+        if (p.x < 40 || p.x > w - 60 || usati.some((u) => Math.abs(u - p.x) < 44)) continue;
+        usati.push(p.x); html += `<span class="g-lon" style="left:${p.x}px;top:${basso}px">${Math.abs(lon)}°${lon >= 0 ? "E" : "O"}</span>`;
+      }
+      const su = map.unproject([destra, 120]), giu = map.unproject([destra, basso - 20]);
+      const usatiY: number[] = [];
+      for (let lat = Math.ceil(Math.min(su.lat, giu.lat) / passo) * passo; lat <= Math.max(su.lat, giu.lat); lat += passo) {
+        const p = map.project([map.unproject([destra, (120 + basso) / 2]).lng, lat]);
+        if (p.y < 120 || p.y > basso - 24 || usatiY.some((u) => Math.abs(u - p.y) < 28)) continue;
+        usatiY.push(p.y); html += `<span class="g-lat" style="top:${p.y}px">${Math.abs(lat)}°${lat >= 0 ? "N" : "S"}</span>`;
+      }
+    } catch { /* fuori dal globo */ }
+    el.innerHTML = html;
+  });
+}
+map.on("move", etichetteGradi);
+
+// ---------- echi che respirano: solo gli eventi in corso, 3,6 s, appena percettibile ----------
+let respiro = 1;
+setInterval(() => {
+  if (calmo() || st.play || document.hidden || !pronta || !map.getLayer?.("eco") || !EVENTI.every((e) => riv[e.id] >= 1)) return;
+  respiro = 1 + 0.14 * Math.sin((performance.now() / 3600) * Math.PI * 2);
+  map.setPaintProperty("eco", "heatmap-weight", pesoEco(st.i));
+}, 90);
+function pesoEco(i: number): any { return ["*", ["get", `w${i}`], R(), ["case", ["==", ["get", "vivo"], 1], respiro, 1]]; }
+
 // ---------- strati: eco a bassa quota, anelli netti da vicino ----------
 // Ogni punto porta i valori di tutti i fotogrammi (w0…, b0…, o0…): cambiare fotogramma cambia solo la pittura, senza ricaricare i dati.
 // rivelazione per evento (0…1): il fascio scopre ogni eco quando lo attraversa
@@ -279,7 +342,7 @@ function punti() {
   const ev = filtrati();
   return {
     type: "FeatureCollection", features: ev.map((e) => {
-      const p: Record<string, any> = { id: e.id, icon: `${e.tipo}-${variante(e)}`, nome: e.comune, sel: st.sel === e.id ? 1 : 0 };
+      const p: Record<string, any> = { id: e.id, icon: `${e.tipo}-${variante(e)}`, nome: e.comune, sel: st.sel === e.id ? 1 : 0, vivo: e.stato === "in_corso" ? 1 : 0 };
       FOTO.forEach((f, i) => {
         const w = peso(e, f);
         p[`w${i}`] = w; p[`b${i}`] = banda(w).k;
@@ -297,10 +360,10 @@ function contorni() {
   };
 }
 const RAMPA = {
-  oss: ["rgba(18,96,104,0.38)", "rgba(24,148,146,0.56)", "rgba(72,212,186,0.74)", "rgba(170,247,224,0.88)", "rgba(240,255,251,0.96)"],
-  prev: ["rgba(36,62,112,0.38)", "rgba(58,104,176,0.54)", "rgba(110,160,228,0.7)", "rgba(182,210,250,0.85)", "rgba(236,244,255,0.94)"],
+  oss: ["rgba(120,70,14,0.40)", "rgba(176,108,26,0.58)", "rgba(255,180,60,0.76)", "rgba(255,216,143,0.9)", "rgba(255,246,222,0.96)"],
+  prev: ["rgba(60,78,100,0.40)", "rgba(92,118,150,0.56)", "rgba(140,168,200,0.72)", "rgba(196,214,234,0.86)", "rgba(240,246,252,0.94)"],
 };
-const ANELLI = { oss: ["#18948f", "#48d4ba", "#aaf7e0"], prev: ["#3a68b0", "#6ea0e4", "#b6d2fa"] };
+const ANELLI = { oss: ["#b06c1a", "#ffb43c", "#ffd88f"], prev: ["#5c7696", "#8ca8c8", "#c4d6ea"] };
 const rampa = (k: "oss" | "prev") => ["step", ["heatmap-density"], "rgba(0,0,0,0)", 0.05, RAMPA[k][0], 0.2, RAMPA[k][1], 0.42, RAMPA[k][2], 0.66, RAMPA[k][3], 0.88, RAMPA[k][4]];
 const visibile = (i: number) => ["any", ["==", ["get", "sel"], 1], [">", ["get", `w${i}`], 0]];
 
@@ -312,6 +375,11 @@ map.on("style.load", async () => {
   const c = contorni();
   map.addSource("punti", { type: "geojson", data: punti() });
   map.addSource("aree", { type: "geojson", data: c.aree }); map.addSource("tratti", { type: "geojson", data: c.tratti });
+  map.addSource("reticolo", { type: "geojson", data: reticolo() });
+  map.addLayer({ id: "reticolo-fine", type: "line", source: "reticolo", minzoom: 4.2, filter: ["==", ["get", "passo"], 1],
+    paint: { "line-color": "rgba(255,226,170,0.09)", "line-width": 0.6, "line-opacity": ["interpolate", ["linear"], ["zoom"], 4.2, 0, 5, 1, 10, 1, 12, 0.4] } });
+  map.addLayer({ id: "reticolo-ampio", type: "line", source: "reticolo", maxzoom: 5, filter: ["==", ["get", "passo"], 10],
+    paint: { "line-color": "rgba(255,226,170,0.1)", "line-width": 0.6, "line-opacity": ["interpolate", ["linear"], ["zoom"], 4.2, 1, 5, 0] } });
   map.addLayer({ id: "eco", type: "heatmap", source: "punti", maxzoom: 10, paint: {
     "heatmap-weight": 0,
     "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 3, 2.2, 6, 3, 9, 2],
@@ -324,14 +392,14 @@ map.on("style.load", async () => {
     "circle-radius": 8 + k * 9, "circle-color": "rgba(0,0,0,0)", "circle-stroke-width": k === 3 ? 1.5 : 1.2,
     "circle-stroke-color": ANELLI.oss[k - 1], "circle-stroke-opacity": 0, "circle-pitch-alignment": "map",
   } });
-  map.addLayer({ id: "impulso", type: "circle", source: "punti", paint: { "circle-radius": 0, "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": "#aaf7e0", "circle-stroke-width": 1.5, "circle-stroke-opacity": 0 } });
-  map.addLayer({ id: "aree-line", type: "line", source: "aree", minzoom: 8, paint: { "line-color": "#f1fbf8", "line-opacity": 0, "line-width": 1.2, "line-dasharray": [3, 3] } });
-  map.addLayer({ id: "tratti", type: "line", source: "tratti", layout: { "line-join": "round" }, paint: { "line-color": "#f1fbf8", "line-opacity": 0, "line-width": 3, "line-dasharray": [2, 1] } });
+  map.addLayer({ id: "impulso", type: "circle", source: "punti", paint: { "circle-radius": 0, "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": "#ffd88f", "circle-stroke-width": 1.5, "circle-stroke-opacity": 0 } });
+  map.addLayer({ id: "aree-line", type: "line", source: "aree", minzoom: 8, paint: { "line-color": "#fbf4e8", "line-opacity": 0, "line-width": 1.2, "line-dasharray": [3, 3] } });
+  map.addLayer({ id: "tratti", type: "line", source: "tratti", layout: { "line-join": "round" }, paint: { "line-color": "#fbf4e8", "line-opacity": 0, "line-width": 3, "line-dasharray": [2, 1] } });
   map.addLayer({ id: "icone", type: "symbol", source: "punti", layout: { "icon-image": ["get", "icon"], "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.56, 7, 0.75, 10, 0.95, 14, 1.15], "icon-allow-overlap": true, "icon-ignore-placement": true },
     paint: { "icon-opacity": 0, "icon-opacity-transition": { duration: 0 } } });
   if (map.getStyle().glyphs) map.addLayer({ id: "nomi", type: "symbol", source: "punti", minzoom: 6, filter: ["==", ["get", `o${I_ORA}`], 1],
     layout: { "text-field": ["get", "nome"], "text-font": ["Noto Sans Regular"], "text-size": 12, "text-offset": [0, 1.3], "text-anchor": "top", "text-optional": true },
-    paint: { "text-color": "#f1fbf8", "text-halo-color": "#04070a", "text-halo-width": 1.5 } });
+    paint: { "text-color": "#fbf4e8", "text-halo-color": "#0a0805", "text-halo-width": 1.5 } });
   map.on("click", (ev: any) => {
     const p = ev.point, f = map.queryRenderedFeatures([[p.x - 22, p.y - 22], [p.x + 22, p.y + 22]], { layers: ["icone"] }).filter((x: any) => x.properties[`o${st.i}`] === 1);
     if (f.length) apri(f[0].properties.id, false);
@@ -339,7 +407,7 @@ map.on("style.load", async () => {
   map.on("mousemove", (ev: any) => { const p = ev.point; map.getCanvas().style.cursor = map.queryRenderedFeatures([[p.x - 14, p.y - 14], [p.x + 14, p.y + 14]], { layers: ["icone"] }).length ? "pointer" : ""; });
   dipingi();
   const rg = await regioniPronte;
-  if (rg) { map.addSource("regioni", { type: "geojson", data: rg }); map.addLayer({ id: "regioni-line", type: "line", source: "regioni", paint: { "line-color": "rgba(200,232,226,.2)", "line-width": 0.6 } }, "eco"); }
+  if (rg) { map.addSource("regioni", { type: "geojson", data: rg }); map.addLayer({ id: "regioni-line", type: "line", source: "regioni", paint: { "line-color": "rgba(255,226,170,.16)", "line-width": 0.6 } }, "eco"); }
   // dati, stile e regioni sono pronti: gli echi non aspettano le immagini satellitari oltre 1 secondo
   let fatto = false;
   const via = () => { if (fatto) return; fatto = true; pronta = true; comparsa(); };
@@ -351,7 +419,7 @@ let modo: "oss" | "prev" | "" = "";
 function dipingi() {
   if (!map.getLayer?.("eco")) return;
   const i = st.i, m = futuro() ? "prev" : "oss";
-  map.setPaintProperty("eco", "heatmap-weight", ["*", ["get", `w${i}`], R()]);
+  map.setPaintProperty("eco", "heatmap-weight", pesoEco(i));
   map.setPaintProperty("icone", "icon-opacity", ["*", ["get", `o${i}`], R(1.6)]);
   // lo zoom deve stare al primo livello dell'espressione: da 6.3 a 8 gli anelli sostituiscono l'eco
   for (const k of [1, 2, 3]) map.setPaintProperty(`anello${k}`, "circle-stroke-opacity", ["interpolate", ["linear"], ["zoom"], 6.3, 0, 8, ["*", ["case", [">=", ["get", `b${i}`], k], 0.95 - k * 0.15, 0], R()]]);
@@ -372,7 +440,7 @@ function ricarica() {
 }
 
 // ---------- radar a tutto schermo: gira finché i dati non sono pronti, poi un ultimo giro rivela gli echi ----------
-const sweep = $("#sweep") as unknown as HTMLCanvasElement;
+const sweep = $("#sweep") as unknown as HTMLCanvasElement, anelli = $("#sweep-anelli") as unknown as HTMLCanvasElement;
 let radarVivo = true, ultimoGiro = 0, angolo = -Math.PI / 2, tPrec = 0, chiudiGiro: (() => void) | null = null;
 const GIRO_ATTESA = 1600;           // un giro mentre si carica
 const GIRO_FINALE = MOTO.reveal - 160; // l'ultimo giro, più l'accensione dell'ultima eco
@@ -386,22 +454,25 @@ function disegnaRadar(t: number) {
   if (!radarVivo) return;
   const box = $("#mapbox"), dpr = Math.min(2, devicePixelRatio || 1);
   if (sweep.width !== box.clientWidth * dpr || sweep.height !== box.clientHeight * dpr) { sweep.width = box.clientWidth * dpr; sweep.height = box.clientHeight * dpr; }
-  const ctx = sweep.getContext("2d")!, c = centroRadar(), cx = c.x * dpr, cy = c.y * dpr, Rm = Math.hypot(Math.max(cx, sweep.width - cx), Math.max(cy, sweep.height - cy));
-  const dt = tPrec ? t - tPrec : 0; tPrec = t;
+  if (anelli.width !== sweep.width || anelli.height !== sweep.height) { anelli.width = sweep.width; anelli.height = sweep.height; }
+  const ctx = sweep.getContext("2d")!, ca = anelli.getContext("2d")!, c = centroRadar(), cx = c.x * dpr, cy = c.y * dpr, Rm = Math.hypot(Math.max(cx, sweep.width - cx), Math.max(cy, sweep.height - cy));
+  const dt = tPrec ? Math.min(100, t - tPrec) : 0; tPrec = t;
+  const prima = angolo;
   if (!calmo()) angolo += (dt / (ultimoGiro ? GIRO_FINALE : GIRO_ATTESA)) * Math.PI * 2;
-  ctx.clearRect(0, 0, sweep.width, sweep.height);
-  ctx.fillStyle = `rgba(4,7,10,${ultimoGiro ? 0.35 * (1 - Math.min(1, (t - ultimoGiro) / GIRO_FINALE)) : 0.35})`; ctx.fillRect(0, 0, sweep.width, sweep.height);
-  // anelli di distanza su tutto lo schermo
-  ctx.lineWidth = dpr; ctx.strokeStyle = "rgba(150,240,214,.16)"; ctx.setLineDash([2 * dpr, 5 * dpr]);
-  for (let r = 120 * dpr; r < Rm; r += 120 * dpr) { ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke(); }
-  ctx.setLineDash([]);
-  ctx.fillStyle = "rgba(150,240,214,.6)"; ctx.beginPath(); ctx.arc(cx, cy, 2.5 * dpr, 0, Math.PI * 2); ctx.fill();
+  // velo e anelli di distanza: ridisegnati da capo a ogni fotogramma
+  ca.clearRect(0, 0, anelli.width, anelli.height);
+  ca.fillStyle = `rgba(6,4,2,${ultimoGiro ? 0.38 * (1 - Math.min(1, (t - ultimoGiro) / GIRO_FINALE)) : 0.38})`; ca.fillRect(0, 0, anelli.width, anelli.height);
+  ca.lineWidth = dpr; ca.strokeStyle = "rgba(255,210,140,.16)"; ca.setLineDash([2 * dpr, 5 * dpr]);
+  for (let r = 120 * dpr; r < Rm; r += 120 * dpr) { ca.beginPath(); ca.arc(cx, cy, r, 0, Math.PI * 2); ca.stroke(); }
+  ca.setLineDash([]);
+  ca.fillStyle = "rgba(255,210,140,.6)"; ca.beginPath(); ca.arc(cx, cy, 2.5 * dpr, 0, Math.PI * 2); ca.fill();
   if (!calmo()) {
-    const coda = 0.9, a = angolo;
-    const g = ctx.createConicGradient(a - coda, cx, cy);
-    g.addColorStop(0, "rgba(97,232,198,0)"); g.addColorStop(coda / (Math.PI * 2), "rgba(97,232,198,0.22)"); g.addColorStop(coda / (Math.PI * 2) + 0.001, "rgba(97,232,198,0)"); g.addColorStop(1, "rgba(97,232,198,0)");
-    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, Rm, a - coda, a); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = "rgba(190,255,236,.85)"; ctx.lineWidth = 1.5 * dpr; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(a) * Rm, cy + Math.sin(a) * Rm); ctx.stroke();
+    // scia: come il fosforo di un PPI, ciò che il fascio ha toccato si spegne piano (mezza vita ~350 ms)
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.fillStyle = `rgba(0,0,0,${1 - Math.pow(0.5, dt / 350)})`; ctx.fillRect(0, 0, sweep.width, sweep.height);
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = "rgba(255,180,60,0.3)"; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, Rm, prima, angolo + 0.002); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = "rgba(255,226,160,.95)"; ctx.lineWidth = 1.5 * dpr; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(angolo) * Rm, cy + Math.sin(angolo) * Rm); ctx.stroke();
   }
   if (ultimoGiro) passaggio(c, t);
   requestAnimationFrame(disegnaRadar);
@@ -431,8 +502,8 @@ function pulsa(t: number) {
 }
 function fermaRadar() {
   radarVivo = false; chiudiGiro = null;
-  sweep.classList.add("off"); loader.classList.add("off");
-  setTimeout(() => sweep.getContext("2d")!.clearRect(0, 0, sweep.width, sweep.height), 300);
+  sweep.classList.add("off"); anelli.classList.add("off"); loader.classList.add("off");
+  setTimeout(() => { sweep.getContext("2d")!.clearRect(0, 0, sweep.width, sweep.height); anelli.getContext("2d")!.clearRect(0, 0, anelli.width, anelli.height); etichetteGradi(); }, 300);
 }
 requestAnimationFrame(disegnaRadar);
 function comparsa() {
@@ -611,20 +682,20 @@ function filtroRegioni() {
   </div>`;
 }
 // inquadratura calcolata qui in Mercatore: sul globo cameraForBounds a volte non trova una soluzione
-function inquadra(b: [[number, number], [number, number]], maxZoom = 9) {
+function inquadra(b: [[number, number], [number, number]], maxZoom = 9, pitch = 0) {
   const pad = padMappa(), box = $("#mapbox");
   const W = Math.max(80, box.clientWidth - pad.left - pad.right), Hh = Math.max(80, box.clientHeight - pad.top - pad.bottom);
   const my = (lat: number) => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) / (2 * Math.PI); // in frazioni di mondo
   const dx = (b[1][0] - b[0][0]) / 360, dy = my(b[1][1]) - my(b[0][1]);
   const zoom = Math.min(maxZoom, Math.log2(Math.min(W / (512 * dx), Hh / (512 * dy))));
   const yc = (my(b[0][1]) + my(b[1][1])) / 2, latc = (360 / Math.PI) * Math.atan(Math.exp(yc * 2 * Math.PI)) - 90;
-  map.flyTo({ center: [(b[0][0] + b[1][0]) / 2, latc], zoom, padding: pad, pitch: 0, bearing: 0, duration: calmo() ? 0 : MOTO.fly, essential: true });
+  map.flyTo({ center: [(b[0][0] + b[1][0]) / 2, latc], zoom, padding: pad, pitch, bearing: 0, duration: calmo() ? 0 : MOTO.fly, essential: true });
 }
 function scegliRegione(r: string | null) {
   st.regione = r || null;
   if (st.sel && desktop()) { st.sel = null; sgancia(); detail.hidden = true; $("#app").classList.remove("with-detail"); requestAnimationFrame(() => map.resize()); }
   aggiorna();
-  if (st.regione && bboxRegione[st.regione]) inquadra(bboxRegione[st.regione]);
+  if (st.regione && bboxRegione[st.regione]) inquadra(bboxRegione[st.regione], 9, desktop() ? 35 : 30);
   else if (!st.regione) inquadra(ITALIA);
   annuncia(st.regione ? `Filtro: ${st.regione}. ${filtrati().length} ${filtrati().length === 1 ? "evento" : "eventi"} nel periodo.` : "Filtro rimosso: tutta Italia.");
 }
@@ -774,7 +845,7 @@ function apri(id: string, daElenco: boolean) {
     map.resize(); traccia();
     const pad = desktop() ? { left: 60, top: 90, right: 60, bottom: 60 } : { top: 110, bottom: window.innerHeight * 0.58, left: 30, right: 30 };
     aggancia(e);
-    map.flyTo({ center: e.lngLat, zoom: e.precisione === "comune" ? 10 : 11, pitch: desktop() ? 35 : 25, padding: pad, duration: calmo() ? 0 : MOTO.fly, curve: 1.3, essential: true });
+    map.flyTo({ center: e.lngLat, zoom: e.precisione === "comune" ? 10 : 11, pitch: desktop() ? 48 : 42, padding: pad, duration: calmo() ? 0 : MOTO.fly, curve: 1.3, essential: true });
     // l'etichetta si decodifica quando la camera è arrivata
     if (!calmo()) setTimeout(() => preso === e && etichetta(e), MOTO.fly);
     else etichetta(e);
@@ -859,13 +930,13 @@ function scegliComune(c: Comune) {
   q.value = c[0]; mostraLista("", false); chiudiCercaMob();
   const n = vicinoA(c);
   if (!desktop()) panel.dataset.state = "peek";
-  map.flyTo({ center: [c[3], c[4]], zoom: 11, pitch: 0, padding: padMappa(), duration: calmo() ? 0 : MOTO.fly, essential: true });
+  map.flyTo({ center: [c[3], c[4]], zoom: 11, pitch: desktop() ? 45 : 40, padding: padMappa(), duration: calmo() ? 0 : MOTO.fly, essential: true });
   const src = map.getSource?.("luogo"), dati = { type: "FeatureCollection", features: [{ type: "Feature", geometry: { type: "Point", coordinates: [c[3], c[4]] }, properties: { nome: c[0] } }] };
   if (src) src.setData(dati);
   else if (map.getLayer?.("icone")) {
     map.addSource("luogo", { type: "geojson", data: dati });
-    map.addLayer({ id: "luogo-anello", type: "circle", source: "luogo", paint: { "circle-radius": 9, "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": "#eef7f5", "circle-stroke-width": 1.5 } }, "icone");
-    map.addLayer({ id: "luogo-punto", type: "circle", source: "luogo", paint: { "circle-radius": 2.5, "circle-color": "#eef7f5" } }, "icone");
+    map.addLayer({ id: "luogo-anello", type: "circle", source: "luogo", paint: { "circle-radius": 9, "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": "#f6efe3", "circle-stroke-width": 1.5 } }, "icone");
+    map.addLayer({ id: "luogo-punto", type: "circle", source: "luogo", paint: { "circle-radius": 2.5, "circle-color": "#f6efe3" } }, "icone");
   }
   annuncia(`${c[0]} (${c[1]}): ${n ? `${n} ${n === 1 ? "evento" : "eventi"} entro 30 km` : "nessun evento entro 30 km"}.`);
 }
