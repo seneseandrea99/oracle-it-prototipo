@@ -9,7 +9,7 @@ const SUD: [[number, number], [number, number]] = [[12.2, 36.6], [18.7, 42.2]];
 const TIPI: Record<Tipo, { label: string; plur: string; colore: string; forma: "quadrato" | "rombo" | "triangolo" | "cerchio" }> = {
   blocco: { label: "Blocco", plur: "Blocchi", colore: "#ff4b3e", forma: "quadrato" },
   sciopero: { label: "Sciopero", plur: "Scioperi", colore: "#6fb6ff", forma: "rombo" },
-  corteo: { label: "Corteo", plur: "Cortei", colore: "#ffb238", forma: "triangolo" },
+  corteo: { label: "Corteo", plur: "Cortei", colore: "#f2d64b", forma: "triangolo" },
   presidio: { label: "Presidio", plur: "Presìdi", colore: "#2fe0b5", forma: "cerchio" },
 };
 const ORDINE_TIPI: Tipo[] = ["blocco", "presidio", "corteo", "sciopero"];
@@ -71,16 +71,16 @@ function percorso(ctx: CanvasRenderingContext2D, f: string, c: number, r: number
   else if (f === "triangolo") { ctx.moveTo(c, c - r); ctx.lineTo(c + r * 0.95, c + r * 0.72); ctx.lineTo(c - r * 0.95, c + r * 0.72); ctx.closePath(); }
   else ctx.arc(c, c, r * 0.84, 0, Math.PI * 2);
 }
-function icona(tipo: Tipo, v: string, px = 60) {
+function icona(tipo: Tipo, v: string, px = 64) {
   const cv = document.createElement("canvas"); cv.width = cv.height = px;
-  const ctx = cv.getContext("2d")!, c = px / 2, r = px * 0.25, col = v === "concluso" ? "#5d6a73" : TIPI[tipo].colore;
-  ctx.strokeStyle = "rgba(255,255,255,.5)"; ctx.lineWidth = px * 0.025;
-  const a = px * 0.46, l = px * 0.11;
-  for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { ctx.beginPath(); ctx.moveTo(c + sx * a, c + sy * (a - l)); ctx.lineTo(c + sx * a, c + sy * a); ctx.lineTo(c + sx * (a - l), c + sy * a); ctx.stroke(); }
-  percorso(ctx, TIPI[tipo].forma, c, r + px * 0.05); ctx.fillStyle = "rgba(12,12,14,.92)"; ctx.fill();
-  percorso(ctx, TIPI[tipo].forma, c, r); ctx.lineWidth = px * 0.065; ctx.strokeStyle = col;
-  if (v === "utenti") ctx.setLineDash([px * 0.07, px * 0.05]);
+  const ctx = cv.getContext("2d")!, c = px / 2, col = v === "concluso" ? "#5d6a73" : TIPI[tipo].colore;
+  const m = px * 0.1, k = px * 0.2, e = px - m;
+  ctx.beginPath(); ctx.moveTo(m, m); ctx.lineTo(e, m); ctx.lineTo(e, e - k); ctx.lineTo(e - k, e); ctx.lineTo(m, e); ctx.closePath();
+  ctx.fillStyle = "rgba(14,14,16,.88)"; ctx.fill();
+  ctx.lineWidth = px * 0.04; ctx.strokeStyle = col; if (v === "utenti") ctx.setLineDash([px * 0.06, px * 0.04]); ctx.stroke(); ctx.setLineDash([]);
+  percorso(ctx, TIPI[tipo].forma, c, px * 0.17); ctx.lineWidth = px * 0.05; ctx.strokeStyle = col;
   if (v === "pieno" || v === "concluso") { ctx.fillStyle = col; ctx.fill(); }
+  if (v === "utenti") ctx.setLineDash([px * 0.05, px * 0.04]);
   ctx.stroke();
   return ctx.getImageData(0, 0, px, px);
 }
@@ -96,43 +96,59 @@ const filtrati = () => EVENTI.filter((e) => st.tipi.has(e.tipo)
   && (st.quando === "tutto" || (st.quando === "ora" ? e.stato === "in_corso" : e.stato !== "concluso" && +new Date(e.inizio) - +ORA < 7 * 864e5))
   && (!st.nazionale || e.nazionale));
 
-// mappa
+// mappa: globo con immagini satellitari, sopra solo strade, confini e nomi
+const SATELLITE = {
+  eox: { tiles: ["https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg"], maxzoom: 15,
+    attribution: '<a href="https://s2maps.eu" target="_blank" rel="noopener">Sentinel-2 cloudless by EOX IT Services GmbH</a> (dati Copernicus Sentinel 2020)' },
+  esri: { tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"], maxzoom: 18,
+    attribution: "Immagini: Esri, Maxar, Earthstar Geographics" },
+};
 const map = new maplibregl.Map({
-  container: "map", style: { version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#0c0c0e" } }] },
-  bounds: SUD, maxBounds: [[3.5, 33.5], [21.5, 48.8]], minZoom: 4.6, maxZoom: 17.5, pitch: desktop() ? 40 : 28, maxPitch: 60,
+  container: "map", style: { version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#05070a" } }] },
+  center: [12.6, 41.8], zoom: calmo() ? 5 : 2.4, minZoom: 1.6, maxZoom: 17.5, maxPitch: 60,
   attributionControl: { compact: true }, dragRotate: false,
 });
 map.touchZoomRotate.disableRotation();
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true } }), "top-right");
 
-function ricolora(style: any) {
-  const strade = ["match", ["get", "class"], ["motorway"], "rgba(255,255,255,.55)", ["trunk", "primary"], "rgba(255,255,255,.32)", ["secondary", "tertiary"], "rgba(255,255,255,.18)", "rgba(255,255,255,.1)"];
-  for (const l of style.layers) {
-    l.paint = l.paint || {};
+function satellite(style: any) {
+  const strade = ["match", ["get", "class"], ["motorway"], "rgba(255,236,190,.7)", ["trunk", "primary"], "rgba(255,255,255,.45)", ["secondary", "tertiary"], "rgba(255,255,255,.25)", "rgba(255,255,255,.12)"];
+  const tenute = style.layers.filter((l: any) => {
     const id = String(l.id), sl = String(l["source-layer"] || "");
-    if (l.type === "background") l.paint["background-color"] = "#0c0c0e";
-    else if (l.type === "fill") {
-      if (sl === "water" || /water|ocean|lake/.test(id)) { l.paint["fill-color"] = "#081419"; l.paint["fill-opacity"] = 1; }
-      else if (sl === "building") l.layout = { ...(l.layout || {}), visibility: "none" };
-      else { l.paint["fill-color"] = "#121216"; l.paint["fill-opacity"] = 0.55; delete l.paint["fill-pattern"]; }
-      delete l.paint["fill-outline-color"];
-    } else if (l.type === "line") {
-      l.paint["line-color"] = sl === "transportation" ? strade : sl === "boundary" ? "rgba(57,215,255,.38)" : sl === "waterway" ? "#0e2832" : "rgba(255,255,255,.07)";
-      delete l.paint["line-gradient"];
-    } else if (l.type === "symbol") {
-      l.paint["text-color"] = /place|city|town|capital|state|country/.test(id) ? "#d9dbde" : "#7d8086";
-      l.paint["text-halo-color"] = "#0c0c0e"; l.paint["text-halo-width"] = 1.4; l.paint["icon-opacity"] = 0;
-    } else if (l.type === "fill-extrusion") l.layout = { ...(l.layout || {}), visibility: "none" };
-  }
-  const src = Object.keys(style.sources).find((k) => style.sources[k].type === "vector");
-  if (src) style.layers.push({ id: "edifici-3d", type: "fill-extrusion", source: src, "source-layer": "building", minzoom: 13,
-    paint: { "fill-extrusion-color": "#a9b4bd", "fill-extrusion-opacity": 0.13, "fill-extrusion-height": ["coalesce", ["get", "render_height"], 8], "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0] } });
+    if (l.type === "line" && sl === "transportation") { l.paint = { ...(l.paint || {}), "line-color": strade }; delete l.paint["line-gradient"]; delete l.paint["line-dasharray"]; return !/casing|tunnel|rail|path|ferry/.test(id); }
+    if (l.type === "line" && sl === "boundary") { l.paint = { ...(l.paint || {}), "line-color": "rgba(255,255,255,.55)" }; return true; }
+    if (l.type === "symbol" && /place|city|town|village|capital|state|country|road|highway|motorway/.test(id)) {
+      l.paint = { ...(l.paint || {}), "text-color": "#ffffff", "text-halo-color": "rgba(0,0,0,.85)", "text-halo-width": 1.5, "icon-opacity": 0 };
+      return true;
+    }
+    return false;
+  });
+  style.sources.satellite = { type: "raster", tileSize: 256, ...SATELLITE.eox };
+  style.layers = [
+    { id: "spazio", type: "background", paint: { "background-color": "#05070a" } },
+    { id: "satellite", type: "raster", source: "satellite", paint: { "raster-brightness-max": 0.58, "raster-saturation": -0.65, "raster-contrast": 0.1, "raster-fade-duration": 200 } },
+    ...tenute,
+  ];
+  style.projection = { type: "globe" };
+  style.sky = { "sky-color": "#061527", "horizon-color": "#2c5a86", "fog-color": "#05070a", "sky-horizon-blend": 0.6, "horizon-fog-blend": 0.5, "fog-ground-blend": 0.4,
+    "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 0, 1, 5, 1, 8, 0] };
   return style;
 }
+let erroriSat = 0;
+map.on("error", (e: any) => {
+  if (e?.sourceId === "satellite" && ++erroriSat === 4) { const src = map.getSource("satellite"); src?.setTiles?.(SATELLITE.esri.tiles); }
+  else console.warn("mappa:", e?.error?.message);
+});
 (async () => {
-  for (const url of STILI) { try { const r = await fetch(url); if (r.ok) { map.setStyle(ricolora(await r.json())); return; } } catch { /* successivo */ } }
-  $("#maperr").hidden = false;
+  map.once("style.load", () => setTimeout(() => { if (!calmo()) map.fitBounds(ITALIA, { padding: desktop() ? 40 : { top: 20, bottom: 240, left: 10, right: 10 }, duration: 2600, essential: true }); }, 500));
+  try {
+    const r = await fetch("https://tiles.openfreemap.org/styles/liberty");
+    if (!r.ok) throw new Error(String(r.status));
+    map.setStyle(satellite(await r.json()));
+  } catch {
+    map.setStyle(satellite({ version: 8, sources: {}, layers: [] }));
+  }
 })();
 
 function geo() {
@@ -147,6 +163,10 @@ map.on("style.load", () => {
   if (map.getSource("punti")) return;
   for (const t of ORDINE_TIPI) for (const v of ["pieno", "vuoto", "utenti", "concluso"]) if (!map.hasImage(`${t}-${v}`)) map.addImage(`${t}-${v}`, icona(t, v), { pixelRatio: 2 });
   const d = geo();
+  fetch("regioni.json").then((r) => r.json()).then((rg) => { regioniGeo = rg; map.addSource("regioni", { type: "geojson", data: intensita() });
+    map.addLayer({ id: "regioni-fill", type: "fill", source: "regioni", paint: { "fill-color": ["step", ["get", "n"], "rgba(255,255,255,0.02)", 1, "rgba(214,58,42,0.22)", 2, "rgba(214,58,42,0.34)", 3, "rgba(214,58,42,0.48)"], "fill-opacity": ["interpolate", ["linear"], ["zoom"], 6, 1, 9, 0.35, 12, 0.12] } }, "aree-fill");
+    map.addLayer({ id: "regioni-line", type: "line", source: "regioni", paint: { "line-color": "rgba(255,255,255,.28)", "line-width": 0.7 } }, "aree-fill");
+  }).catch(() => {});
   map.addSource("aree", { type: "geojson", data: d.aree }); map.addSource("tratti", { type: "geojson", data: d.tratti }); map.addSource("punti", { type: "geojson", data: d.punti });
   map.addLayer({ id: "aree-fill", type: "fill", source: "aree", paint: { "fill-color": ["get", "colore"], "fill-opacity": 0.08 } });
   map.addLayer({ id: "aree-line", type: "line", source: "aree", paint: { "line-color": ["get", "colore"], "line-opacity": 0.8, "line-width": 1.2, "line-dasharray": [3, 3] } });
@@ -157,9 +177,11 @@ map.on("style.load", () => {
   map.on("click", "icone", (ev: any) => apri(ev.features[0].properties.id, false));
   map.on("mouseenter", "icone", () => (map.getCanvas().style.cursor = "pointer"));
   map.on("mouseleave", "icone", () => (map.getCanvas().style.cursor = ""));
-  if (!calmo()) { const t0 = performance.now(); const step = (t: number) => { const p = ((t - t0) % 2600) / 2600; if (map.getLayer("onda")) { map.setPaintProperty("onda", "circle-radius", 14 + p * 26); map.setPaintProperty("onda", "circle-stroke-opacity", 0.5 * (1 - p)); } requestAnimationFrame(step); }; requestAnimationFrame(step); }
+  if (!calmo()) { const t0 = performance.now(); const step = (t: number) => { const p = ((t - t0) % 2600) / 2600; if (map.getLayer("onda")) { map.setPaintProperty("onda", "circle-radius", 14 + p * 26); map.setPaintProperty("onda", "circle-stroke-opacity", 0.3 * (1 - p)); } requestAnimationFrame(step); }; requestAnimationFrame(step); }
 });
-function aggiornaMappa() { const d = geo(); map.getSource("punti")?.setData(d.punti); map.getSource("aree")?.setData(d.aree); map.getSource("tratti")?.setData(d.tratti); }
+let regioniGeo: any = null;
+function intensita() { const l = filtrati().filter((e) => e.stato !== "concluso"); return { ...regioniGeo, features: regioniGeo.features.map((f: any) => ({ ...f, properties: { ...f.properties, n: l.filter((e) => e.regione === f.properties.regione).length } })) }; }
+function aggiornaMappa() { if (regioniGeo) map.getSource("regioni")?.setData(intensita()); const d = geo(); map.getSource("punti")?.setData(d.punti); map.getSource("aree")?.setData(d.aree); map.getSource("tratti")?.setData(d.tratti); }
 
 // linea del tempo: le ultime 24 ore occupano il 30% a sinistra, i prossimi 8 giorni il resto
 const T0 = +ORA - 24 * 36e5, T1 = +ORA + 8 * 864e5;
@@ -179,7 +201,7 @@ function striscia(w: number) {
     s += `<line x1="${x(+t)}" x2="${x(+t)}" y1="16" y2="${h}" stroke="#242328" stroke-dasharray="2 3"/>`;
     if (libera(x(+t))) s += `<text class="tick" x="${x(+t)}" y="11" text-anchor="middle">${t.getDate()}/${t.getMonth() + 1}</text>`;
   }
-  s += `<line x1="${now}" x2="${now}" y1="14" y2="${h}" stroke="#39d7ff"/><text class="tick now" x="${now}" y="11" text-anchor="middle">ora</text>`;
+  s += `<line x1="${now}" x2="${now}" y1="14" y2="${h}" stroke="#ff8a2b"/><text class="tick now" x="${now}" y="11" text-anchor="middle">ora</text>`;
   ORDINE_TIPI.forEach((t, i) => (s += stretto ? `<g transform="translate(8,${top + i * lane + 8}) scale(.6)" fill="${TIPI[t].colore}" stroke="${TIPI[t].colore}" stroke-width="2"><title>${TIPI[t].plur}</title>${forma(TIPI[t].forma)}</g>` : `<text class="tick" x="0" y="${top + i * lane + 12}">${TIPI[t].plur}</text>`));
   for (const e of filtrati()) {
     if (+new Date(e.fine ?? e.inizio) < T0 && e.stato !== "in_corso") continue;
@@ -275,7 +297,7 @@ function apri(id: string, daElenco: boolean) {
   requestAnimationFrame(() => {
     map.resize(); disegnaStrisce();
     const pad = desktop() ? { left: 60, top: 60, right: 60, bottom: 60 } : { top: 40, bottom: window.innerHeight * 0.5, left: 30, right: 30 };
-    map.flyTo({ center: e.lngLat, zoom: Math.max(map.getZoom(), e.precisione === "comune" ? 11 : 13.6), pitch: desktop() ? 50 : 38, padding: pad, duration: calmo() ? 0 : daElenco ? 1400 : 800, essential: true });
+    map.flyTo({ center: e.lngLat, zoom: Math.max(map.getZoom(), e.precisione === "comune" ? 11 : 13.6), pitch: desktop() ? 45 : 35, padding: pad, duration: calmo() ? 0 : daElenco ? 1400 : 800, essential: true });
     aggancia(e);
   });
 }
@@ -293,7 +315,7 @@ function decodifica(el: HTMLElement, testo: string) {
   const segni = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"; let i = 0;
   const id = setInterval(() => { i++; el.textContent = testo.split("").map((ch, k) => (k < i || ch === " " ? ch : segni[(Math.random() * segni.length) | 0])).join(""); if (i >= testo.length) clearInterval(id); }, 26);
 }
-function aggancia(e: Evento) { preso = e; lock.hidden = false; lock.classList.remove("on"); void lock.offsetWidth; requestAnimationFrame(() => lock.classList.add("on")); decodifica(tag, `${TIPI[e.tipo].label} · ${e.comune}`.toUpperCase()); segui(); }
+function aggancia(e: Evento) { preso = e; lock.hidden = false; lock.classList.remove("on"); void lock.offsetWidth; requestAnimationFrame(() => lock.classList.add("on")); tag.textContent = `${TIPI[e.tipo].label} · ${e.comune}`; segui(); }
 function sgancia() { preso = null; lock.hidden = true; line.setAttribute("points", ""); dot.setAttribute("r", "0"); }
 function segui() {
   if (!preso) return;
