@@ -332,3 +332,22 @@ document.querySelectorAll<HTMLButtonElement>(".nav").forEach((b) => b.addEventLi
 }));
 
 aggiorna();
+
+// pannello trascinabile su telefono
+const fasi = ["peek", "half", "full"] as const;
+const grip = $("#grip");
+let y0 = 0, top0 = 0, mosso = false;
+grip.addEventListener("click", () => { if (mosso) return; const i = fasi.indexOf(side.dataset.state as any); side.dataset.state = fasi[(i + 1) % 3]; });
+grip.addEventListener("pointerdown", (ev) => { y0 = ev.clientY; mosso = false; top0 = side.getBoundingClientRect().top; side.classList.add("dragging"); grip.setPointerCapture(ev.pointerId); });
+grip.addEventListener("pointermove", (ev) => {
+  if (!side.classList.contains("dragging")) return;
+  const dy = ev.clientY - y0; if (Math.abs(dy) > 4) mosso = true;
+  const base = side.getBoundingClientRect().top - (side.getBoundingClientRect().top - top0);
+  side.style.transform = `translateY(${Math.max(0, base + dy - (window.innerHeight - side.offsetHeight - 60))}px)`;
+  segui();
+});
+grip.addEventListener("pointerup", () => {
+  side.classList.remove("dragging"); side.style.transform = "";
+  if (mosso) { const t = side.getBoundingClientRect().top / window.innerHeight; side.dataset.state = t < 0.3 ? "full" : t < 0.7 ? "half" : "peek"; }
+  setTimeout(() => (mosso = false), 0);
+});
