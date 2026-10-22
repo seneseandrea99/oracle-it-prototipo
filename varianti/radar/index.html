@@ -14,6 +14,13 @@
 </head>
 <body>
   <div class="app" id="app">
+    <nav class="rail" aria-label="Navigazione">
+      <a class="rail-mark" href="#" aria-label="ORACLE IT" id="rail-mark"></a>
+      <button class="nav" data-vista="mappa" aria-current="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z M9 4v14 M15 6v14"/></svg><span>Mappa</span></button>
+      <button class="nav" data-vista="elenco" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg><span>Elenco</span></button>
+      <button class="nav" data-vista="segnala" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z M12 7v5 M9.5 9.5h5"/></svg><span>Segnala</span></button>
+      <button class="nav" data-vista="metodo" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z M8.5 12l2.5 2.5 4.5-5"/></svg><span>Metodo</span></button>
+    </nav>
     <aside class="panel" id="panel" data-state="peek" aria-label="Situazione">
       <button class="grip" id="grip" aria-label="Espandi o riduci il pannello"><span></span></button>
       <div class="panel-loop" id="loop-slot-mob"></div>
@@ -23,7 +30,8 @@
     <main class="stage">
       <div class="mapbox" id="mapbox">
         <div id="map" aria-label="Mappa radar degli eventi in Italia"></div>
-        <div class="loader" id="loader" role="status" aria-label="Caricamento della mappa"><span class="loader-spin"></span><span class="loader-txt fig" id="loader-txt"></span></div>
+        <canvas class="sweep" id="sweep" aria-hidden="true"></canvas>
+        <div class="loader" id="loader" role="status" aria-label="Caricamento della mappa"><span class="loader-txt fig" id="loader-txt"></span></div>
         <div class="hud">
           <div class="hud-brand"><span class="mark" id="hud-mark"></span><b>ORACLE IT</b><span class="test">Dati di prova</span></div>
           <div class="hud-time" id="hud-time"></div>

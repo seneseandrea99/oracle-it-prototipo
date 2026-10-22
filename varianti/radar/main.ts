@@ -183,7 +183,6 @@ function cerchio([lng, lat]: [number, number], km: number) {
 
 // ---------- caricamento iniziale ----------
 const loader = $("#loader"), loaderTxt = $("#loader-txt");
-loader.querySelector(".loader-spin")!.innerHTML = radar(64);
 $("#hud-mark").innerHTML = radar(20, "brand");
 (() => {
   const fonti = EVENTI.reduce((a, e) => a + e.fonti.length, 0);
@@ -201,13 +200,14 @@ const SATELLITE = {
   esri: { tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"], maxzoom: 18,
     attribution: "Immagini: Esri, Maxar, Earthstar Geographics" },
 };
-const padMappa = () => desktop() ? { top: 80, bottom: 30, left: 30, right: 30 } : { top: 130, bottom: 250, left: 14, right: 14 };
+const padMappa = () => desktop() ? { top: 80, bottom: 30, left: 30, right: 30 } : { top: 130, bottom: 240, left: 14, right: 14 };
+const CENTRO_RADAR: [number, number] = [12.9, 41.7];
 function erroreMappa(msg: string) {
   const box = $("#maperr");
   box.hidden = false;
   box.innerHTML = `<p><b>La mappa non si è caricata.</b> ${msg} L'elenco degli eventi resta utilizzabile.</p><button class="btn" id="riprova">Riprova</button>`;
   box.querySelector("#riprova")!.addEventListener("click", () => location.reload());
-  loader.classList.add("off"); occupati = 1; occupato(false);
+  fermaRadar(); occupati = 1; occupato(false);
 }
 // se la libreria della mappa non arriva, l'app resta usabile come elenco
 const senzaMappa = typeof maplibregl === "undefined";
@@ -266,7 +266,15 @@ const regioniPronte = fetch("../../regioni.json").then((r) => r.json()).catch(()
 
 // ---------- strati: eco a bassa quota, anelli netti da vicino ----------
 // Ogni punto porta i valori di tutti i fotogrammi (w0…, b0…, o0…): cambiare fotogramma cambia solo la pittura, senza ricaricare i dati.
-let rivela = calmo() ? 1 : 0;
+// rivelazione per evento (0…1): il fascio scopre ogni eco quando lo attraversa
+const riv: Record<string, number> = {};
+for (const e of EVENTI) riv[e.id] = calmo() ? 1 : 0;
+const impulso: Record<string, number> = {};
+function R(scala = 1): any {
+  const v = EVENTI.map((e) => Math.min(1, riv[e.id] * scala));
+  if (v.every((x) => x === v[0])) return v[0];
+  return ["match", ["get", "id"], ...EVENTI.flatMap((e, k) => [e.id, v[k]]), 0];
+}
 function punti() {
   const ev = filtrati();
   return {
@@ -343,10 +351,10 @@ let modo: "oss" | "prev" | "" = "";
 function dipingi() {
   if (!map.getLayer?.("eco")) return;
   const i = st.i, m = futuro() ? "prev" : "oss";
-  map.setPaintProperty("eco", "heatmap-weight", ["*", ["get", `w${i}`], rivela]);
-  map.setPaintProperty("icone", "icon-opacity", ["*", ["get", `o${i}`], Math.min(1, rivela * 1.4)]);
+  map.setPaintProperty("eco", "heatmap-weight", ["*", ["get", `w${i}`], R()]);
+  map.setPaintProperty("icone", "icon-opacity", ["*", ["get", `o${i}`], R(1.6)]);
   // lo zoom deve stare al primo livello dell'espressione: da 6.3 a 8 gli anelli sostituiscono l'eco
-  for (const k of [1, 2, 3]) map.setPaintProperty(`anello${k}`, "circle-stroke-opacity", ["interpolate", ["linear"], ["zoom"], 6.3, 0, 8, ["*", ["case", [">=", ["get", `b${i}`], k], 0.95 - k * 0.15, 0], rivela]]);
+  for (const k of [1, 2, 3]) map.setPaintProperty(`anello${k}`, "circle-stroke-opacity", ["interpolate", ["linear"], ["zoom"], 6.3, 0, 8, ["*", ["case", [">=", ["get", `b${i}`], k], 0.95 - k * 0.15, 0], R()]]);
   map.setPaintProperty("aree-line", "line-opacity", ["case", visibile(i), 0.7, 0]);
   map.setPaintProperty("tratti", "line-opacity", ["case", visibile(i), 1, 0]);
   if (map.getLayer("nomi")) map.setFilter("nomi", ["==", ["get", `o${i}`], 1]);
@@ -363,22 +371,85 @@ function ricarica() {
   dipingi();
 }
 
-// ---------- comparsa: gli echi salgono e un impulso parte da ciascuno (≤ 600 ms) ----------
+// ---------- radar a tutto schermo: gira finché i dati non sono pronti, poi un ultimo giro rivela gli echi ----------
+const sweep = $("#sweep") as unknown as HTMLCanvasElement;
+let radarVivo = true, ultimoGiro = 0, angolo = -Math.PI / 2, tPrec = 0, chiudiGiro: (() => void) | null = null;
+const GIRO_ATTESA = 1600;           // un giro mentre si carica
+const GIRO_FINALE = MOTO.reveal - 160; // l'ultimo giro, più l'accensione dell'ultima eco
+const ACCENSIONE = 160;
+function centroRadar() {
+  const box = $("#mapbox");
+  try { const c = map.project(CENTRO_RADAR); if (c && c.x > -500) return c; } catch { /* mappa non pronta */ }
+  return { x: box.clientWidth / 2, y: box.clientHeight / 2 };
+}
+function disegnaRadar(t: number) {
+  if (!radarVivo) return;
+  const box = $("#mapbox"), dpr = Math.min(2, devicePixelRatio || 1);
+  if (sweep.width !== box.clientWidth * dpr || sweep.height !== box.clientHeight * dpr) { sweep.width = box.clientWidth * dpr; sweep.height = box.clientHeight * dpr; }
+  const ctx = sweep.getContext("2d")!, c = centroRadar(), cx = c.x * dpr, cy = c.y * dpr, Rm = Math.hypot(Math.max(cx, sweep.width - cx), Math.max(cy, sweep.height - cy));
+  const dt = tPrec ? t - tPrec : 0; tPrec = t;
+  if (!calmo()) angolo += (dt / (ultimoGiro ? GIRO_FINALE : GIRO_ATTESA)) * Math.PI * 2;
+  ctx.clearRect(0, 0, sweep.width, sweep.height);
+  ctx.fillStyle = `rgba(4,7,10,${ultimoGiro ? 0.35 * (1 - Math.min(1, (t - ultimoGiro) / GIRO_FINALE)) : 0.35})`; ctx.fillRect(0, 0, sweep.width, sweep.height);
+  // anelli di distanza su tutto lo schermo
+  ctx.lineWidth = dpr; ctx.strokeStyle = "rgba(150,240,214,.16)"; ctx.setLineDash([2 * dpr, 5 * dpr]);
+  for (let r = 120 * dpr; r < Rm; r += 120 * dpr) { ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke(); }
+  ctx.setLineDash([]);
+  ctx.fillStyle = "rgba(150,240,214,.6)"; ctx.beginPath(); ctx.arc(cx, cy, 2.5 * dpr, 0, Math.PI * 2); ctx.fill();
+  if (!calmo()) {
+    const coda = 0.9, a = angolo;
+    const g = ctx.createConicGradient(a - coda, cx, cy);
+    g.addColorStop(0, "rgba(97,232,198,0)"); g.addColorStop(coda / (Math.PI * 2), "rgba(97,232,198,0.22)"); g.addColorStop(coda / (Math.PI * 2) + 0.001, "rgba(97,232,198,0)"); g.addColorStop(1, "rgba(97,232,198,0)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, Rm, a - coda, a); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = "rgba(190,255,236,.85)"; ctx.lineWidth = 1.5 * dpr; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(a) * Rm, cy + Math.sin(a) * Rm); ctx.stroke();
+  }
+  if (ultimoGiro) passaggio(c, t);
+  requestAnimationFrame(disegnaRadar);
+}
+// durante l'ultimo giro: ogni eco si accende quando il fascio la attraversa
+let a0Finale = 0;
+function passaggio(c: { x: number; y: number }, t: number) {
+  const fatto = angolo - a0Finale;
+  let cambiato = false;
+  for (const e of EVENTI) {
+    if (riv[e.id] >= 1) continue;
+    if (impulso[e.id] === undefined) {
+      const q = map.project(e.lngLat);
+      let b = Math.atan2(q.y - c.y, q.x - c.x) - a0Finale; while (b < 0) b += Math.PI * 2;
+      if (b <= fatto) impulso[e.id] = t;
+    }
+    if (impulso[e.id] !== undefined) { riv[e.id] = Math.min(1, (t - impulso[e.id]) / ACCENSIONE); cambiato = true; }
+  }
+  if (cambiato) { dipingi(); pulsa(t); }
+  if (fatto >= Math.PI * 2 && EVENTI.every((e) => riv[e.id] >= 1)) chiudiGiro?.();
+}
+function pulsa(t: number) {
+  const r = ["match", ["get", "id"], ...EVENTI.flatMap((e) => { const p = impulso[e.id] === undefined ? 0 : Math.min(1, (t - impulso[e.id]) / 360); return [e.id, 4 + (1 - Math.pow(1 - p, 3)) * 22]; }), 0];
+  const o = ["match", ["get", "id"], ...EVENTI.flatMap((e) => { const p = impulso[e.id] === undefined ? 1 : Math.min(1, (t - impulso[e.id]) / 360); return [e.id, 0.8 * (1 - p)]; }), 0];
+  map.setPaintProperty("impulso", "circle-radius", r);
+  map.setPaintProperty("impulso", "circle-stroke-opacity", ["*", ["get", `o${st.i}`], o]);
+}
+function fermaRadar() {
+  radarVivo = false; chiudiGiro = null;
+  sweep.classList.add("off"); loader.classList.add("off");
+  setTimeout(() => sweep.getContext("2d")!.clearRect(0, 0, sweep.width, sweep.height), 300);
+}
+requestAnimationFrame(disegnaRadar);
 function comparsa() {
-  loader.classList.add("off");
   occupato(false);
   orologio(true);
-  if (calmo()) { rivela = 1; dipingi(); return; }
-  const t0 = performance.now();
-  map.setPaintProperty("impulso", "circle-stroke-opacity", ["*", ["get", `o${st.i}`], 0]);
-  const giro = (t: number) => {
-    const p = Math.max(0, Math.min(1, (t - t0) / MOTO.reveal)), e = 1 - Math.pow(1 - p, 4);
-    rivela = e; dipingi();
-    map.setPaintProperty("impulso", "circle-radius", 4 + e * 24);
-    map.setPaintProperty("impulso", "circle-stroke-opacity", ["*", ["get", `o${st.i}`], 0.8 * (1 - p)]);
-    if (p < 1) requestAnimationFrame(giro);
+  const fine = () => {
+    for (const e of EVENTI) riv[e.id] = 1;
+    dipingi(); if (map.getLayer?.("impulso")) map.setPaintProperty("impulso", "circle-stroke-opacity", 0);
+    fermaRadar();
   };
-  requestAnimationFrame(giro);
+  if (calmo()) { fine(); return; }
+  // un tocco salta l'ultimo giro
+  chiudiGiro = fine;
+  addEventListener("pointerdown", () => chiudiGiro?.(), { once: true });
+  a0Finale = angolo; ultimoGiro = performance.now(); tPrec = 0;
+  loader.classList.add("off");
+  setTimeout(() => chiudiGiro?.(), MOTO.reveal + 200); // rete di sicurezza
 }
 
 // ---------- orologio e anello del tempo ----------
@@ -527,17 +598,40 @@ function situazione() {
   ${legenda()}
   <div class="foot"><button class="btn" data-vista="metodo">Come calcoliamo l'eco</button><button class="btn" data-vista="segnala">Segnala un evento</button></div>`;
 }
+function vicini() {
+  let c: [number, number] = CENTRO_RADAR;
+  try { const m = map.getCenter(); if (m && typeof m.lng === "number") c = [m.lng, m.lat]; } catch { /* senza mappa */ }
+  const km = (a: [number, number], b: [number, number]) => { const x = (b[0] - a[0]) * 111.32 * Math.cos(((a[1] + b[1]) / 2) * Math.PI / 180), y = (b[1] - a[1]) * 110.57; return Math.hypot(x, y); };
+  return EVENTI.filter((e) => e.stato !== "concluso").map((e) => ({ e, d: km(c, e.lngLat) })).sort((a, b) => a.d - b.d).slice(0, 3);
+}
+function segnalaHTML() {
+  const v = vicini();
+  return `<div class="d"><div class="d-top"><button class="back" data-back>← Indietro</button></div>
+    <header class="d-head"><h2>Segnala un evento</h2><p>Nel sito reale una segnalazione richiede meno di un minuto. In questo prototipo non viene inviato nulla.</p></header>
+    <section class="card"><h3>È uno di questi?</h3><p class="plain small">Eventi già noti vicino al centro della mappa. Se è lo stesso, basta confermarlo: non serve una nuova segnalazione.</p>
+      <div class="near">${v.map(({ e, d }) => `<button class="row near-row" data-id="${e.id}"><span class="ic">${simbolo(e.tipo, variante(e), 16)}</span><span class="t">${titolo(e)}</span><span class="eco fig">${d < 10 ? d.toFixed(1) : Math.round(d)} km</span><span class="m"><span>${STATI[e.stato]}, ${dataOra(e.inizio)}</span></span></button>`).join("")}</div></section>
+    <section class="card"><h3>Se non c'è, ti chiederemo</h3><ol class="steps">
+      <li><b>Il punto.</b> Posi il segnaposto dove succede: l'evento, non dove ti trovi tu.</li>
+      <li><b>Il tipo.</b> Blocco, sciopero, corteo o presidio.</li>
+      <li><b>Quando.</b> Adesso, oppure l'ora di inizio.</li>
+      <li><b>Quante persone, a occhio.</b> Poche decine, centinaia, migliaia.</li>
+      <li><b>L'effetto sul traffico.</b> Nessuno, rallentamenti, blocco.</li></ol>
+      <p class="plain small">Niente foto e niente testo libero pubblico. Le sole segnalazioni mostrano un'eco tratteggiata e servono più segnalatori diversi nello stesso punto entro 2 ore.</p></section>
+    <div class="acts"><button class="btn primary" id="seg-invia">Posa il segnaposto</button></div><div id="msg" aria-live="polite"></div></div>`;
+}
 function metodo(v: "metodo" | "segnala") {
-  st.vista = v;
+  st.vista = v; segnaNav(v);
   const box = desktop() ? detail : body;
   if (desktop()) { detail.hidden = false; $("#app").classList.add("with-detail"); requestAnimationFrame(() => { map.resize(); traccia(); }); } else { panel.dataset.state = "half"; panel.classList.add("evento"); }
-  sgancia();
+  sgancia(); st.sel = null;
   box.innerHTML = v === "segnala"
-    ? `<div class="d"><div class="d-top"><button class="back" data-back>← Indietro</button></div><header class="d-head"><h2>Segnala un evento</h2><p>Nel sito reale: posa il segnaposto sul punto, scegli tipo, ora e l'effetto sul traffico. Niente foto e niente testo libero pubblico.</p></header><section class="card"><h3>Prima di inviare</h3><p class="plain">Ti mostriamo gli eventi già noti vicino a te: se il tuo è uno di questi, basta confermarlo. Le sole segnalazioni producono un'eco tratteggiata, distinta da quelle con fonti.</p></section></div>`
+    ? segnalaHTML()
     : `<div class="d"><div class="d-top"><button class="back" data-back>← Indietro</button></div><header class="d-head"><h2>Come calcoliamo l'eco</h2><p>Un evento diventa pubblico quando le fonti indipendenti superano la soglia di 0,80. L'eco sulla mappa è la gravità del tipo moltiplicata per la conferma delle fonti.</p></header>
       <section class="card"><h3>Gravità del tipo</h3><dl class="kv">${ORDINE_TIPI.map((k) => `<dt>${TIPI[k].label}</dt><dd class="fig">${TIPI[k].gravita.toFixed(2)}</dd>`).join("")}</dl></section>
       <section class="card"><h3>Peso delle fonti</h3><dl class="kv"><dt>Ente ufficiale</dt><dd class="fig">1.00</dd><dt>Agenzia di stampa</dt><dd class="fig">0.60</dd><dt>Testata</dt><dd class="fig">0.50</dd><dt>Promotori</dt><dd class="fig">0.30</dd><dt>Segnalazioni</dt><dd class="fig">fino a 0.60</dd><dt>Smentita</dt><dd class="fig">−0.60</dd></dl></section>
       <section class="card"><h3>Previsione</h3><p class="plain">Dopo l'ora attuale l'animazione avanza a blocchi di 6 ore e mostra solo eventi annunciati da fonti, in azzurro. Un evento in corso senza fine comunicata sfuma nelle 24 ore successive.</p></section></div>`;
+  box.querySelector("#seg-invia")?.addEventListener("click", () => ((box.querySelector("#msg") as HTMLElement).innerHTML = `<p class="msg">Nel sito reale la mappa passerebbe alla modalità segnaposto. Qui non viene inviato nulla.</p>`));
+  box.scrollTop = 0;
 }
 body.addEventListener("click", (ev) => {
   const b = (ev.target as HTMLElement).closest("button") as HTMLElement | null;
@@ -547,7 +641,27 @@ body.addEventListener("click", (ev) => {
   else if (b.dataset.back !== undefined) chiudi();
   else if (b.dataset.id) apri(b.dataset.id, true);
 });
-detail.addEventListener("click", (ev) => { const b = (ev.target as HTMLElement).closest("button") as HTMLElement | null; if (b?.dataset.back !== undefined) chiudi(); });
+detail.addEventListener("click", (ev) => { const b = (ev.target as HTMLElement).closest("button") as HTMLElement | null; if (b?.dataset.back !== undefined) chiudi(); else if (b?.dataset.id) apri(b.dataset.id, true); });
+
+// ---------- barra di navigazione ----------
+function segnaNav(v: string) { document.querySelectorAll(".nav").forEach((n) => n.setAttribute("aria-current", String((n as HTMLElement).dataset.vista === v))); }
+document.querySelectorAll<HTMLButtonElement>(".nav").forEach((b) => b.addEventListener("click", () => {
+  const v = b.dataset.vista!;
+  if (v === "segnala" || v === "metodo") { metodo(v); return; }
+  if (st.sel || st.vista !== "elenco") chiudi();
+  segnaNav(v);
+  if (v === "mappa") {
+    if (!desktop()) panel.dataset.state = "peek";
+    // inquadra l'Italia da dritto: con la camera inclinata il calcolo dei margini sul globo può fallire
+    const cam = (() => { try { return map.cameraForBounds(ITALIA, { padding: padMappa(), pitch: 0, bearing: 0 }); } catch { return null; } })();
+    map.flyTo({ ...(cam && cam.center ? cam : { center: [12.6, 41.8], zoom: desktop() ? 5 : 4.1, padding: padMappa() }), pitch: 0, bearing: 0, duration: calmo() ? 0 : MOTO.fly, essential: true });
+  } else {
+    if (!desktop()) panel.dataset.state = "full";
+    requestAnimationFrame(() => $("#lista")?.scrollIntoView({ behavior: calmo() ? "auto" : "smooth", block: "start" }));
+  }
+}));
+$("#rail-mark").innerHTML = radar(22, "brand");
+$("#rail-mark").addEventListener("click", (ev) => { ev.preventDefault(); (document.querySelector('.nav[data-vista="mappa"]') as HTMLElement).click(); });
 
 function scheda(e: Evento) {
   const c = credibilita(e), pk = pacchetti(e), tot = pk.reduce((a, x) => a + x.w, 0), seg = 24, I = intensita(e), b = banda(I);
@@ -593,7 +707,7 @@ function apri(id: string, daElenco: boolean) {
   void daElenco;
 }
 function chiudi() {
-  st.sel = null; sgancia();
+  st.sel = null; sgancia(); segnaNav("mappa");
   detail.hidden = true; $("#app").classList.remove("with-detail");
   situazione(); ricarica();
   if (!desktop()) panel.dataset.state = "peek";
