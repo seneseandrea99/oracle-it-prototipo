@@ -1,5 +1,5 @@
 import "./style.css";
-import { EVENTI, ORA, type Evento, type Tipo, type FonteTipo } from "./data";
+import { EVENTI, ORA, type Evento, type Tipo, type FonteTipo } from "../../src/data";
 
 declare const maplibregl: any;
 
@@ -163,7 +163,7 @@ map.on("style.load", () => {
   if (map.getSource("punti")) return;
   for (const t of ORDINE_TIPI) for (const v of ["pieno", "vuoto", "utenti", "concluso"]) if (!map.hasImage(`${t}-${v}`)) map.addImage(`${t}-${v}`, icona(t, v), { pixelRatio: 2 });
   const d = geo();
-  fetch("regioni.json").then((r) => r.json()).then((rg) => { regioniGeo = rg; map.addSource("regioni", { type: "geojson", data: intensita() });
+  fetch("../../regioni.json").then((r) => r.json()).then((rg) => { regioniGeo = rg; map.addSource("regioni", { type: "geojson", data: intensita() });
     map.addLayer({ id: "regioni-fill", type: "fill", source: "regioni", paint: { "fill-color": ["step", ["get", "n"], "rgba(255,255,255,0.02)", 1, "rgba(214,58,42,0.22)", 2, "rgba(214,58,42,0.34)", 3, "rgba(214,58,42,0.48)"], "fill-opacity": ["interpolate", ["linear"], ["zoom"], 6, 1, 9, 0.35, 12, 0.12] } }, "aree-fill");
     map.addLayer({ id: "regioni-line", type: "line", source: "regioni", paint: { "line-color": "rgba(255,255,255,.28)", "line-width": 0.7 } }, "aree-fill");
   }).catch(() => {});
