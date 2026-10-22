@@ -101,8 +101,8 @@ function peso(e: Evento, f: Foto) {
 const etichettaFoto = (f: Foto) => f.prev ? `${settimana(f.a)} ${giorno(f.a)} ${ora(f.a)}–${ora(f.b)}` : `${settimana(f.b)} ${dataOra(f.b)}`;
 
 // ---------- stato ----------
-const st = { tipi: new Set<Tipo>(ORDINE_TIPI), i: I_ORA, sel: null as string | null, play: false, vista: "elenco" as "elenco" | "metodo" | "segnala" };
-const filtrati = () => EVENTI.filter((e) => st.tipi.has(e.tipo));
+const st = { regione: null as string | null, tipi: new Set<Tipo>(ORDINE_TIPI), i: I_ORA, sel: null as string | null, play: false, vista: "elenco" as "elenco" | "metodo" | "segnala" };
+const filtrati = () => EVENTI.filter((e) => st.tipi.has(e.tipo) && (!st.regione || e.regione === st.regione));
 const foto = () => FOTO[st.i];
 const futuro = () => FOTO[st.i].prev;
 const attivi = (f: Foto) => filtrati().filter((e) => peso(e, f) > 0).sort((a, b) => peso(b, f) - peso(a, f));
@@ -552,10 +552,11 @@ function riga(e: Evento, f: Foto) {
 }
 function scoperta(f: Foto) {
   const att = attivi(f), disc = att.find((e) => e.contraddittorio);
-  const quando = st.i === I_ORA ? "Ora" : f.prev ? `Previsti ${settimana(f.a)} ${giorno(f.a)}, ${ora(f.a)}–${ora(f.b)}` : `Alle ${ora(f.b)} del ${giorno(f.b)}`;
+  const q = st.i === I_ORA ? "ora" : f.prev ? `previsti ${settimana(f.a)} ${giorno(f.a)}, ${ora(f.a)}–${ora(f.b)}` : `alle ${ora(f.b)} del ${giorno(f.b)}`;
+  const quando = st.regione ? `In ${st.regione} ${q}` : q[0].toUpperCase() + q.slice(1);
   if (!att.length) return `<p><b>${quando}</b>: nessuna eco con questi filtri.</p>`;
   const top = att[0], sud = att.filter((e) => SUD.includes(e.regione)).length;
-  const dove = sud ? (sud === att.length ? (att.length > 1 ? ", tutti al Sud" : ", al Sud") : `, ${sud} al Sud`) : "";
+  const dove = st.regione ? "" : sud ? (sud === att.length ? (att.length > 1 ? ", tutti al Sud" : ", al Sud") : `, ${sud} al Sud`) : "";
   return `<p><b>${quando}</b>: ${att.length} ${att.length === 1 ? "evento attivo" : "eventi attivi"}${dove}. Eco più forte: <button class="link" data-id="${top.id}">${titolo(top).toLowerCase()}</button>, ${credibilita(top).label.toLowerCase()}.${disc ? ` A ${disc.comune} le fonti sono discordanti.` : ""}</p>`;
 }
 function cifre(f: Foto) {
@@ -585,13 +586,64 @@ function legenda() {
     <ul class="shapes"><li>${simbolo("blocco", "pieno", 14)}In corso</li><li>${simbolo("blocco", "vuoto", 14)}Annunciato</li><li>${simbolo("blocco", "utenti", 14)}Solo segnalazioni</li><li>${simbolo("blocco", "discorde", 14)}Fonti discordanti</li></ul>
   </section>`;
 }
+// ---------- filtro per regione ----------
+let REGIONI_TUTTE: string[] = [];
+const bboxRegione: Record<string, [[number, number], [number, number]]> = {};
+regioniPronte.then((rg) => {
+  if (!rg) return;
+  for (const f of rg.features) {
+    let x0 = 180, y0 = 90, x1 = -180, y1 = -90;
+    const giro = (c: any) => { if (typeof c[0] === "number") { x0 = Math.min(x0, c[0]); x1 = Math.max(x1, c[0]); y0 = Math.min(y0, c[1]); y1 = Math.max(y1, c[1]); } else c.forEach(giro); };
+    giro(f.geometry.coordinates);
+    bboxRegione[f.properties.regione] = [[x0, y0], [x1, y1]];
+  }
+  REGIONI_TUTTE = Object.keys(bboxRegione).sort((a, b) => a.localeCompare(b, "it"));
+  if (st.vista === "elenco" && !(st.sel && !desktop())) { const r = $("#regioni"); if (r) r.outerHTML = filtroRegioni(); }
+});
+function filtroRegioni() {
+  const conEventi = [...new Set(EVENTI.map((e) => e.regione))].sort((a, b) => EVENTI.filter((e) => e.regione === b).length - EVENTI.filter((e) => e.regione === a).length);
+  const altre = REGIONI_TUTTE.filter((r) => !conEventi.includes(r));
+  const n = (r: string) => EVENTI.filter((e) => e.regione === r && st.tipi.has(e.tipo)).length;
+  return `<div class="regioni" id="regioni" role="group" aria-label="Regione">
+    <button class="chip" data-regione="" aria-pressed="${!st.regione}">Tutta Italia</button>
+    ${conEventi.map((r) => `<button class="chip" data-regione="${r}" aria-pressed="${st.regione === r}">${r} <span class="fig">${n(r)}</span></button>`).join("")}
+    ${altre.length ? `<label class="chip sel ${st.regione && altre.includes(st.regione) ? "on" : ""}"><span class="sr">Altre regioni</span><select id="altre-regioni"><option value="">Altre regioni…</option>${altre.map((r) => `<option value="${r}" ${st.regione === r ? "selected" : ""}>${r}</option>`).join("")}</select></label>` : ""}
+  </div>`;
+}
+// inquadratura calcolata qui in Mercatore: sul globo cameraForBounds a volte non trova una soluzione
+function inquadra(b: [[number, number], [number, number]], maxZoom = 9) {
+  const pad = padMappa(), box = $("#mapbox");
+  const W = Math.max(80, box.clientWidth - pad.left - pad.right), Hh = Math.max(80, box.clientHeight - pad.top - pad.bottom);
+  const my = (lat: number) => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) / (2 * Math.PI); // in frazioni di mondo
+  const dx = (b[1][0] - b[0][0]) / 360, dy = my(b[1][1]) - my(b[0][1]);
+  const zoom = Math.min(maxZoom, Math.log2(Math.min(W / (512 * dx), Hh / (512 * dy))));
+  const yc = (my(b[0][1]) + my(b[1][1])) / 2, latc = (360 / Math.PI) * Math.atan(Math.exp(yc * 2 * Math.PI)) - 90;
+  map.flyTo({ center: [(b[0][0] + b[1][0]) / 2, latc], zoom, padding: pad, pitch: 0, bearing: 0, duration: calmo() ? 0 : MOTO.fly, essential: true });
+}
+function scegliRegione(r: string | null) {
+  st.regione = r || null;
+  if (st.sel && desktop()) { st.sel = null; sgancia(); detail.hidden = true; $("#app").classList.remove("with-detail"); requestAnimationFrame(() => map.resize()); }
+  aggiorna();
+  if (st.regione && bboxRegione[st.regione]) inquadra(bboxRegione[st.regione]);
+  else if (!st.regione) inquadra(ITALIA);
+  annuncia(st.regione ? `Filtro: ${st.regione}. ${filtrati().length} ${filtrati().length === 1 ? "evento" : "eventi"} nel periodo.` : "Filtro rimosso: tutta Italia.");
+}
+const km = (a: [number, number], b: [number, number]) => { const x = (b[0] - a[0]) * 111.32 * Math.cos(((a[1] + b[1]) / 2) * Math.PI / 180), y = (b[1] - a[1]) * 110.57; return Math.hypot(x, y); };
+const fmtKm = (d: number) => d < 10 ? `${d.toFixed(1).replace(".", ",")} km` : `${Math.round(d)} km`;
+
+// ---------- avvisi brevi sulla mappa ----------
+let toastT = 0;
+function annuncia(t: string) {
+  const el = $("#toast"); el.textContent = t; el.classList.add("on");
+  clearTimeout(toastT); toastT = window.setTimeout(() => el.classList.remove("on"), 3200);
+}
+
 function situazione() {
   const f = foto();
   st.vista = "elenco"; panel.classList.remove("evento");
   body.innerHTML = `
-  <header class="title"><div class="title-row"><h1><span class="mark">${radar(22, "brand")}</span>ORACLE IT</h1><span class="test">Dati di prova</span></div>
-    <p class="sub">Radar delle mobilitazioni in Italia. Eventi e fonti di questa pagina sono inventati.</p></header>
   <section class="finding" id="finding">${scoperta(f)}</section>
+  ${filtroRegioni()}
   <div class="figures" id="figures">${cifre(f)}</div>
   <div class="types" role="group" aria-label="Tipi di evento">${ORDINE_TIPI.map((k) => `<button class="type" data-tipo="${k}" aria-pressed="${st.tipi.has(k)}">${simbolo(k, "pieno", 13)}${TIPI[k].plur}</button>`).join("")}</div>
   <section class="block" id="lista">${lista(f)}</section>
@@ -601,7 +653,6 @@ function situazione() {
 function vicini() {
   let c: [number, number] = CENTRO_RADAR;
   try { const m = map.getCenter(); if (m && typeof m.lng === "number") c = [m.lng, m.lat]; } catch { /* senza mappa */ }
-  const km = (a: [number, number], b: [number, number]) => { const x = (b[0] - a[0]) * 111.32 * Math.cos(((a[1] + b[1]) / 2) * Math.PI / 180), y = (b[1] - a[1]) * 110.57; return Math.hypot(x, y); };
   return EVENTI.filter((e) => e.stato !== "concluso").map((e) => ({ e, d: km(c, e.lngLat) })).sort((a, b) => a.d - b.d).slice(0, 3);
 }
 function segnalaHTML() {
@@ -609,7 +660,7 @@ function segnalaHTML() {
   return `<div class="d"><div class="d-top"><button class="back" data-back>← Indietro</button></div>
     <header class="d-head"><h2>Segnala un evento</h2><p>Nel sito reale una segnalazione richiede meno di un minuto. In questo prototipo non viene inviato nulla.</p></header>
     <section class="card"><h3>È uno di questi?</h3><p class="plain small">Eventi già noti vicino al centro della mappa. Se è lo stesso, basta confermarlo: non serve una nuova segnalazione.</p>
-      <div class="near">${v.map(({ e, d }) => `<button class="row near-row" data-id="${e.id}"><span class="ic">${simbolo(e.tipo, variante(e), 16)}</span><span class="t">${titolo(e)}</span><span class="eco fig">${d < 10 ? d.toFixed(1) : Math.round(d)} km</span><span class="m"><span>${STATI[e.stato]}, ${dataOra(e.inizio)}</span></span></button>`).join("")}</div></section>
+      <div class="near">${v.map(({ e, d }) => `<button class="row near-row" data-id="${e.id}"><span class="ic">${simbolo(e.tipo, variante(e), 16)}</span><span class="t">${titolo(e)}</span><span class="eco fig">${fmtKm(d)}</span><span class="m"><span>${STATI[e.stato]}, ${dataOra(e.inizio)}</span></span></button>`).join("")}</div></section>
     <section class="card"><h3>Se non c'è, ti chiederemo</h3><ol class="steps">
       <li><b>Il punto.</b> Posi il segnaposto dove succede: l'evento, non dove ti trovi tu.</li>
       <li><b>Il tipo.</b> Blocco, sciopero, corteo o presidio.</li>
@@ -637,10 +688,12 @@ body.addEventListener("click", (ev) => {
   const b = (ev.target as HTMLElement).closest("button") as HTMLElement | null;
   if (!b) return;
   if (b.dataset.tipo) { const k = b.dataset.tipo as Tipo; if (st.tipi.has(k) && st.tipi.size > 1) st.tipi.delete(k); else st.tipi.add(k); aggiorna(); }
+  else if (b.dataset.regione !== undefined) scegliRegione(b.dataset.regione);
   else if (b.dataset.vista) metodo(b.dataset.vista as "metodo" | "segnala");
   else if (b.dataset.back !== undefined) chiudi();
   else if (b.dataset.id) apri(b.dataset.id, true);
 });
+body.addEventListener("change", (ev) => { const t = ev.target as HTMLSelectElement; if (t.id === "altre-regioni") scegliRegione(t.value); });
 detail.addEventListener("click", (ev) => { const b = (ev.target as HTMLElement).closest("button") as HTMLElement | null; if (b?.dataset.back !== undefined) chiudi(); else if (b?.dataset.id) apri(b.dataset.id, true); });
 
 // ---------- barra di navigazione ----------
@@ -652,37 +705,59 @@ document.querySelectorAll<HTMLButtonElement>(".nav").forEach((b) => b.addEventLi
   segnaNav(v);
   if (v === "mappa") {
     if (!desktop()) panel.dataset.state = "peek";
-    // inquadra l'Italia da dritto: con la camera inclinata il calcolo dei margini sul globo può fallire
-    const cam = (() => { try { return map.cameraForBounds(ITALIA, { padding: padMappa(), pitch: 0, bearing: 0 }); } catch { return null; } })();
-    map.flyTo({ ...(cam && cam.center ? cam : { center: [12.6, 41.8], zoom: desktop() ? 5 : 4.1, padding: padMappa() }), pitch: 0, bearing: 0, duration: calmo() ? 0 : MOTO.fly, essential: true });
+    inquadra(st.regione && bboxRegione[st.regione] ? bboxRegione[st.regione] : ITALIA);
   } else {
     if (!desktop()) panel.dataset.state = "full";
     requestAnimationFrame(() => $("#lista")?.scrollIntoView({ behavior: calmo() ? "auto" : "smooth", block: "start" }));
   }
 }));
 $("#rail-mark").innerHTML = radar(22, "brand");
+$("#title-mark").innerHTML = radar(22, "brand");
 $("#rail-mark").addEventListener("click", (ev) => { ev.preventDefault(); (document.querySelector('.nav[data-vista="mappa"]') as HTMLElement).click(); });
 
+// cascata delle conferme: ogni fonte parte dove finisce la precedente, contro la soglia
+const num = (v: number) => v.toFixed(2).replace(".", ",");
+function cascata(e: Evento) {
+  const pk = pacchetti(e), tot = pk.reduce((a, x) => a + x.w, 0);
+  let acc = 0; const cum = pk.map((x) => { const a = acc; acc += x.w; return [a, acc]; });
+  const lo = Math.min(0, ...cum.flat()), hi = Math.max(SCALA, ...cum.flat());
+  const X = (v: number) => ((v - lo) / (hi - lo)) * 100;
+  const esito = !e.fonti.length ? { t: "Visibile con la regola delle segnalazioni: più persone diverse, stesso punto, entro 2 ore.", k: "user" }
+    : e.contraddittorio ? { t: "Sotto la soglia, ma resta visibile con l'avviso: la prima fonte lo aveva già fatto pubblicare.", k: "warn" }
+    : tot >= SOGLIA ? { t: "Sopra la soglia: visibile.", k: "ok" } : { t: "Sotto la soglia: non sarebbe pubblico.", k: "warn" };
+  const n = pk.length;
+  return `<section class="card perche"><h3>Perché è visibile <span class="fig">${num(tot)} su soglia ${num(SOGLIA)}</span></h3>
+    <ol class="cascata" style="--th:${X(SOGLIA)}%">
+      ${pk.map((p, i) => { const neg = p.w < 0, ut = p.tipo.startsWith("Segnalazioni"); return `<li style="--i:${i}"><span class="ca-n"><b>${p.nome}</b><span>${p.tipo} · <span class="fig">${p.quando}</span></span></span><span class="ca-w fig ${neg ? "neg" : ""}">${neg ? "−" : "+"}${num(Math.abs(p.w))}</span>
+        <span class="ca-t" aria-hidden="true"><i class="${neg ? "neg" : ut ? "ut" : ""}" style="left:${X(Math.min(cum[i][0], cum[i][1]))}%;width:${Math.abs(X(cum[i][1]) - X(cum[i][0]))}%"></i><b class="th"></b></span></li>`; }).join("")}
+      <li class="ca-tot" style="--i:${n}"><span class="ca-n"><b>Totale</b><span class="esito ${esito.k}">${esito.t}</span></span><span class="ca-w fig">${num(tot)}</span>
+        <span class="ca-t" aria-hidden="true"><i class="tot ${tot < 0 ? "neg" : ""} ${esito.k}" style="left:${X(Math.min(0, tot))}%;width:${Math.abs(X(tot) - X(0))}%"></i><b class="th"></b></span></li>
+    </ol>
+    <p class="ca-leg"><span><i class="k-th"></i>Soglia di pubblicazione ${num(SOGLIA)}</span><span>Una smentita, tratteggiata, sottrae peso</span></p></section>`;
+}
+// eventi vicini: stessa regione o entro 60 km, e quelli della stessa mobilitazione
+function eventiVicini(e: Evento) {
+  const v = EVENTI.filter((x) => x.id !== e.id).map((x) => ({ x, d: km(e.lngLat, x.lngLat), mob: !!(e.nazionale && x.nazionale) }))
+    .filter((o) => o.mob || o.d <= 60 || o.x.regione === e.regione).sort((a, b) => a.d - b.d).slice(0, 4);
+  return `<section class="card vicini"><h3>Eventi vicini</h3>${v.length ? `<div class="near">${v.map(({ x, d, mob }) => `<button class="row near-row" data-id="${x.id}"><span class="ic">${simbolo(x.tipo, variante(x), 16)}</span><span class="t">${titolo(x)}</span><span class="eco fig">${fmtKm(d)}</span><span class="m"><span>${mob ? "Stessa mobilitazione" : x.regione === e.regione ? x.regione : "Entro 60 km"} · ${STATI[x.stato].toLowerCase()}, ${dataOra(x.inizio)}</span></span></button>`).join("")}</div>`
+    : `<p class="plain small">Nessun altro evento nella stessa regione, entro 60 km o della stessa mobilitazione.</p>`}</section>`;
+}
 function scheda(e: Evento) {
-  const c = credibilita(e), pk = pacchetti(e), tot = pk.reduce((a, x) => a + x.w, 0), seg = 24, I = intensita(e), b = banda(I);
-  const pieni = Math.round((Math.max(0, Math.min(Math.abs(tot), SCALA)) / SCALA) * seg);
+  const c = credibilita(e), I = intensita(e), b = banda(I);
   return `<div class="d">
   <div class="d-top"><button class="back" data-back>← Tutti gli eventi</button></div>
   <header class="d-head"><div class="d-sym">${simbolo(e.tipo, variante(e), 18)}<span class="fig">${e.regione.toUpperCase()} · ${e.categoria.toUpperCase()}</span></div><h2 class="dec">${titolo(e)}</h2><p>${e.luogo}</p>
     <div class="pills"><span class="pill neutral">${STATI[e.stato]}</span><span class="pill ${c.cls}">${c.label}</span><span class="pill eco-pill">${barre(b.k)}Eco ${b.label}</span></div></header>
   ${e.contraddittorio ? `<p class="alert warn">Due fonti descrivono la situazione in modo incompatibile. L'evento resta visibile con questo avviso finché una fonte successiva non chiarisce.</p>` : ""}
   ${!e.fonti.length ? `<p class="alert user">Nessuna fonte giornalistica o ufficiale finora. È visibile perché ${e.segnalatori} segnalatori diversi lo hanno indicato nello stesso punto entro 2 ore; scompare dopo 6 ore senza nuove segnalazioni.</p>` : ""}
-  <section class="card"><h3>Perché è visibile</h3>
-    <div class="meter-top"><b class="fig">${tot.toFixed(2)}</b><span>soglia di pubblicazione ${SOGLIA.toFixed(2)}${!e.fonti.length ? ", regola a parte per le segnalazioni" : ""}</span></div>
-    <div class="bar">${Array.from({ length: seg }, (_, i) => `<i class="${i < pieni ? "on" : ""} ${tot < 0 ? "neg" : ""}"></i>`).join("")}<span class="th" style="left:${(SOGLIA / SCALA) * 100}%"><em>soglia</em></span></div>
-    <div class="bar-cap fig"><span>0</span><span>${SCALA.toFixed(1)}</span></div>
-    <ol class="packets">${pk.map((p, i) => `<li class="pk" style="--i:${i}"><span class="p">${p.nome}</span><span class="w fig ${p.w < 0 ? "neg" : ""}">${p.w > 0 ? "+" : "−"}${Math.abs(p.w).toFixed(2)}</span><span class="k">${p.tipo}</span><span class="d2 fig">${p.quando}</span></li>`).join("")}</ol></section>
+  ${cascata(e)}
   <section class="card"><h3>Eco sul radar</h3><div class="ecoline">${barre(b.k)}<b>Eco ${b.label}</b><span class="fig">${TIPI[e.tipo].gravita.toFixed(2)} × ${conferma(e).toFixed(2)} = ${I.toFixed(2)}</span></div><p class="plain small">Gravità del tipo per conferma delle fonti${e.contraddittorio ? ", ridotta perché le fonti sono discordanti" : ""}.</p></section>
   <section class="card"><h3>Quando e dove</h3><dl class="kv">
     <dt>Inizio</dt><dd class="fig">${dataOra(e.inizio)}</dd><dt>Fine</dt><dd class="fig">${e.fine ? dataOra(e.fine) : "non comunicata"}</dd>
     <dt>Precisione</dt><dd>${e.precisione === "comune" ? "Solo il comune" : "Punto indicato dalle fonti"}</dd><dt>Traffico</dt><dd>${e.traffico}</dd>
     <dt>Aggiornato</dt><dd class="fig">${dataOra(e.aggiornato)} · ${fa(e.aggiornato)}</dd></dl></section>
   <section class="card"><h3>Cronologia</h3><ol class="tl">${e.cronologia.map(([w, k, t]) => `<li><span class="w fig">${dataOra(w)}</span><span><b>${k}.</b> ${t}</span></li>`).join("")}</ol></section>
+  ${eventiVicini(e)}
   <div class="acts">${e.stato !== "concluso" ? `<button class="btn primary" id="conf">Sono sul posto, confermo</button>` : ""}<button class="btn" id="err">Segnala un errore</button></div><div id="msg" aria-live="polite"></div></div>`;
 }
 function apri(id: string, daElenco: boolean) {
@@ -736,6 +811,85 @@ function segui() {
 }
 map.on("move", segui);
 
+// ---------- ricerca di un comune (elenco ISTAT locale, nessun servizio esterno) ----------
+type Comune = [string, string, string, number, number];
+let COMUNI: Comune[] | null = null, NORM: string[] = [], caricaComuni: Promise<void> | null = null;
+const norma = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[’']/g, "'").toLowerCase().trim();
+const q = $("#q") as HTMLInputElement, qList = $("#q-list"), qX = $("#q-x");
+let trovati: Comune[] = [], attivo = -1;
+function comuni() {
+  if (!caricaComuni) {
+    caricaComuni = fetch("../../comuni.json").then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+      .then((d: Comune[]) => { COMUNI = d; NORM = d.map((c) => norma(c[0])); })
+      .catch(() => { caricaComuni = null; throw new Error("comuni"); });
+  }
+  return caricaComuni;
+}
+const vicinoA = (c: Comune) => EVENTI.filter((e) => km([c[3], c[4]], e.lngLat) <= 30).length;
+function mostraLista(html: string, aperta: boolean) {
+  qList.innerHTML = html; qList.hidden = !aperta; q.setAttribute("aria-expanded", String(aperta));
+  if (!aperta) q.removeAttribute("aria-activedescendant");
+}
+function cerca() {
+  const t = norma(q.value);
+  attivo = -1;
+  if (!t) { mostraLista("", false); return; }
+  if (!COMUNI) {
+    mostraLista(`<li class="q-stato" role="presentation">${radar(14)}Carico l'elenco dei comuni…</li>`, true);
+    comuni().then(cerca, () => mostraLista(`<li class="q-stato err" role="presentation">Elenco dei comuni non disponibile. Riprova più tardi.</li>`, true));
+    return;
+  }
+  const pre: number[] = [], dentro: number[] = [];
+  for (let i = 0; i < NORM.length && pre.length < 8; i++) { if (NORM[i].startsWith(t)) pre.push(i); }
+  if (pre.length < 8) for (let i = 0; i < NORM.length && pre.length + dentro.length < 8; i++) { if (!NORM[i].startsWith(t) && NORM[i].includes(t)) dentro.push(i); }
+  pre.sort((a, b) => NORM[a].length - NORM[b].length || NORM[a].localeCompare(NORM[b]));
+  trovati = [...pre, ...dentro].map((i) => COMUNI![i]);
+  if (!trovati.length) { mostraLista(`<li class="q-stato" role="presentation">Nessun comune con questo nome.</li>`, true); return; }
+  mostraLista(trovati.map((c, k) => { const n = vicinoA(c); return `<li role="option" id="q-o${k}" data-k="${k}" aria-selected="false"><span class="q-n">${esc(c[0])}</span><span class="q-p">${c[1]} · ${c[2]}</span>${n ? `<span class="q-e"><i></i>${n} ${n === 1 ? "evento" : "eventi"} entro 30 km</span>` : ""}</li>`; }).join(""), true);
+}
+function evidenzia(k: number) {
+  const opt = qList.querySelectorAll<HTMLElement>("[role=option]");
+  if (!opt.length) return;
+  attivo = (k + opt.length) % opt.length;
+  opt.forEach((o, i) => o.setAttribute("aria-selected", String(i === attivo)));
+  q.setAttribute("aria-activedescendant", opt[attivo].id);
+  opt[attivo].scrollIntoView({ block: "nearest" });
+}
+function scegliComune(c: Comune) {
+  q.value = c[0]; mostraLista("", false); chiudiCercaMob();
+  const n = vicinoA(c);
+  if (!desktop()) panel.dataset.state = "peek";
+  map.flyTo({ center: [c[3], c[4]], zoom: 11, pitch: 0, padding: padMappa(), duration: calmo() ? 0 : MOTO.fly, essential: true });
+  const src = map.getSource?.("luogo"), dati = { type: "FeatureCollection", features: [{ type: "Feature", geometry: { type: "Point", coordinates: [c[3], c[4]] }, properties: { nome: c[0] } }] };
+  if (src) src.setData(dati);
+  else if (map.getLayer?.("icone")) {
+    map.addSource("luogo", { type: "geojson", data: dati });
+    map.addLayer({ id: "luogo-anello", type: "circle", source: "luogo", paint: { "circle-radius": 9, "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": "#eef7f5", "circle-stroke-width": 1.5 } }, "icone");
+    map.addLayer({ id: "luogo-punto", type: "circle", source: "luogo", paint: { "circle-radius": 2.5, "circle-color": "#eef7f5" } }, "icone");
+  }
+  annuncia(`${c[0]} (${c[1]}): ${n ? `${n} ${n === 1 ? "evento" : "eventi"} entro 30 km` : "nessun evento entro 30 km"}.`);
+}
+q.addEventListener("focus", () => { comuni().catch(() => {}); });
+q.addEventListener("input", () => { qX.hidden = !q.value && desktop(); cerca(); });
+q.addEventListener("keydown", (ev) => {
+  if (ev.key === "ArrowDown") { ev.preventDefault(); if (qList.hidden) cerca(); evidenzia(attivo + 1); }
+  else if (ev.key === "ArrowUp") { ev.preventDefault(); evidenzia(attivo - 1); }
+  else if (ev.key === "Enter") { ev.preventDefault(); const c = trovati[attivo >= 0 ? attivo : 0]; if (c && !qList.hidden) scegliComune(c); }
+  else if (ev.key === "Escape") { ev.stopPropagation(); if (!qList.hidden) mostraLista("", false); else { q.value = ""; chiudiCercaMob(); } }
+});
+qList.addEventListener("pointerdown", (ev) => { const li = (ev.target as HTMLElement).closest("[role=option]") as HTMLElement | null; if (li) { ev.preventDefault(); scegliComune(trovati[+li.dataset.k!]); } });
+q.addEventListener("blur", () => setTimeout(() => mostraLista("", false), 120));
+qX.addEventListener("click", () => { q.value = ""; mostraLista("", false); if (desktop()) { qX.hidden = true; q.focus(); } else chiudiCercaMob(); });
+// telefono: la ricerca si apre dal pulsante in alto
+const cercaMob = $("#cerca-slot-mob"), cercaApri = $("#cerca-apri");
+function chiudiCercaMob() { if (desktop()) return; cercaMob.hidden = true; cercaApri.setAttribute("aria-expanded", "false"); }
+cercaApri.addEventListener("click", () => { cercaMob.hidden = false; cercaApri.setAttribute("aria-expanded", "true"); qX.hidden = false; q.focus(); });
+function collocaCerca() {
+  const c = $("#cerca"), dest = desktop() ? $("#cerca-slot-desk") : cercaMob;
+  if (c.parentElement !== dest) dest.appendChild(c);
+  if (desktop()) { cercaMob.hidden = true; qX.hidden = !q.value; } else qX.hidden = false;
+}
+
 // ---------- impaginazione ----------
 function collocaLoop() {
   const loop = $("#loop"), dest = desktop() ? $("#loop-slot-desk") : $("#loop-slot-mob");
@@ -743,12 +897,13 @@ function collocaLoop() {
 }
 let eraDesk = desktop();
 addEventListener("resize", () => {
-  collocaLoop(); traccia(); segui();
+  collocaLoop(); collocaCerca(); traccia(); segui();
   if (eraDesk !== desktop()) { eraDesk = desktop(); if (st.sel) apri(st.sel, false); else situazione(); }
 });
 function aggiorna() { ricarica(); situazione(); traccia(); }
 
 collocaLoop();
+collocaCerca();
 situazione();
 orologio();
 requestAnimationFrame(traccia);

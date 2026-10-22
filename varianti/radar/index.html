@@ -23,6 +23,11 @@
     </nav>
     <aside class="panel" id="panel" data-state="peek" aria-label="Situazione">
       <button class="grip" id="grip" aria-label="Espandi o riduci il pannello"><span></span></button>
+      <header class="panel-head title">
+        <div class="title-row"><h1><span class="mark" id="title-mark"></span>ORACLE IT</h1><span class="test">Dati di prova</span></div>
+        <p class="sub">Radar delle mobilitazioni in Italia. Eventi e fonti di questa pagina sono inventati.</p>
+        <div id="cerca-slot-desk"></div>
+      </header>
       <div class="panel-loop" id="loop-slot-mob"></div>
       <div class="panel-body" id="panel-body"></div>
     </aside>
@@ -33,9 +38,12 @@
         <canvas class="sweep" id="sweep" aria-hidden="true"></canvas>
         <div class="loader" id="loader" role="status" aria-label="Caricamento della mappa"><span class="loader-txt fig" id="loader-txt"></span></div>
         <div class="hud">
-          <div class="hud-brand"><span class="mark" id="hud-mark"></span><b>ORACLE IT</b><span class="test">Dati di prova</span></div>
+          <div class="hud-top"><div class="hud-brand"><span class="mark" id="hud-mark"></span><b>ORACLE IT</b><span class="test">Dati di prova</span></div>
+            <button class="hud-cerca" id="cerca-apri" aria-label="Cerca un comune" aria-expanded="false" aria-controls="cerca-slot-mob"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg></button></div>
           <div class="hud-time" id="hud-time"></div>
         </div>
+        <div class="cerca-mob" id="cerca-slot-mob" hidden></div>
+        <div class="toast" id="toast" role="status" aria-live="polite"></div>
         <div class="lock" id="lock" hidden aria-hidden="true"><i class="ping"></i><i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i><span class="lock-tag" id="lock-tag"></span></div>
         <div class="maperr" id="maperr" role="alert" hidden></div>
       </div>
@@ -58,6 +66,14 @@
     </main>
 
     <section class="detail" id="detail" hidden aria-label="Scheda evento"></section>
+  </div>
+  <div class="cerca" id="cerca" role="search">
+    <div class="cerca-box">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg>
+      <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Cerca un comune" aria-label="Cerca un comune" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="q-list">
+      <button class="cerca-x" id="q-x" aria-label="Chiudi la ricerca" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <ul class="cerca-list" id="q-list" role="listbox" aria-label="Comuni trovati" hidden></ul>
   </div>
   <script type="module" src="./main.ts"></script>
 </body>
