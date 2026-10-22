@@ -312,7 +312,7 @@ const lock = $("#lock"), tag = $("#lock-tag"), line = document.getElementById("l
 let preso: Evento | null = null;
 function decodifica(el: HTMLElement, testo: string) {
   if (calmo()) { el.textContent = testo; return; }
-  const segni = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", t0 = performance.now(), durata = 240;
+  const segni = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", t0 = performance.now(), durata = 650;
   const passo = (t: number) => {
     const fatti = Math.floor(((t - t0) / durata) * testo.length);
     el.textContent = testo.split("").map((ch, k) => (k < fatti || ch === " " ? ch : segni[(Math.random() * segni.length) | 0])).join("");
